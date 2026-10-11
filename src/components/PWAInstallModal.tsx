@@ -262,7 +262,7 @@ export const PWAInstallModal: React.FC<PWAInstallModalProps> = ({
                     3
                   </div>
                   <div className="text-xs text-stone-700 dark:text-zinc-300">
-                    Toque em <strong>"Adicionar"</strong> no canto superior direito. Pronto! O app abrirá como nativo.
+                    Toque em <strong>"Adicionar"</strong> no canto superior direito. O ícone da <strong>Biblioteca Digital Cristã</strong> será adicionado à sua tela de início com abertura em tela cheia.
                   </div>
                 </div>
               </div>

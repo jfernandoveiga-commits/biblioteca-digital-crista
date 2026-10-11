@@ -193,10 +193,10 @@ export const ReflectionQuestionsSection: React.FC<ReflectionQuestionsSectionProp
   }[theme];
 
   const fontSizeClasses = {
-    sm: 'text-[15.5px] leading-[1.75]',
-    md: 'text-[17px] leading-[1.8]',
-    lg: 'text-[19px] leading-[1.85]',
-    xl: 'text-[21px] leading-[1.9]',
+    sm: 'text-[15.5px] leading-[1.7]',
+    md: 'text-[17px] leading-[1.7]',
+    lg: 'text-[19px] leading-[1.7]',
+    xl: 'text-[21px] leading-[1.7]',
   }[fontSize];
 
   return (

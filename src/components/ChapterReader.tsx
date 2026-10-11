@@ -270,10 +270,10 @@ export const ChapterReader: React.FC<ChapterReaderProps> = ({
   }[theme];
 
   const fontSizeClasses = {
-    sm: 'text-[16px] sm:text-[17px] leading-[1.8]',
-    md: 'text-[18px] sm:text-[19.5px] leading-[1.85]',
-    lg: 'text-[20px] sm:text-[22px] leading-[1.9]',
-    xl: 'text-[22.5px] sm:text-[24.5px] leading-[1.95]',
+    sm: 'text-[16px] sm:text-[17px] leading-[1.7]',
+    md: 'text-[18px] sm:text-[19.5px] leading-[1.7]',
+    lg: 'text-[20px] sm:text-[22px] leading-[1.7]',
+    xl: 'text-[22.5px] sm:text-[24.5px] leading-[1.7]',
   }[fontSize];
 
   const chapterLabel = chapter.romanNumber || `Capítulo ${chapter.number}`;
@@ -463,14 +463,18 @@ export const ChapterReader: React.FC<ChapterReaderProps> = ({
 
           {/* 1. SEÇÃO DA NARRATIVA */}
           {hasNarrative ? (
-            <section aria-label="Narrativa do Capítulo" className={`font-serif max-w-[65ch] mx-auto text-pretty space-y-6 sm:space-y-7 text-stone-850 dark:text-zinc-100 ${fontSizeClasses}`}>
+            <section aria-label="Narrativa do Capítulo" className={`font-serif max-w-[65ch] mx-auto text-pretty text-stone-850 dark:text-zinc-100 ${fontSizeClasses}`}>
               {chapter.content.map((paragraph, index) => {
                 const trimmed = paragraph.trim();
 
                 // Pausa cênica entre momentos narrativos
                 if (trimmed === '---') {
                   return (
-                    <div key={index} className="py-6 sm:py-8 my-2 flex items-center justify-center select-none" aria-hidden="true">
+                    <div
+                      key={index}
+                      className="py-[1.75em] mb-[1.15em] flex items-center justify-center select-none"
+                      aria-hidden="true"
+                    >
                       <div className="flex items-center gap-3 text-stone-400 dark:text-zinc-500 opacity-60">
                         <span className="w-8 sm:w-12 h-px bg-current" />
                         <span className="font-serif text-xs tracking-widest">✦ ✦ ✦</span>
@@ -498,7 +502,7 @@ export const ChapterReader: React.FC<ChapterReaderProps> = ({
                       ref={(el) => {
                         paragraphRefs.current[index] = el as any;
                       }}
-                      className={`relative group transition-all duration-200 rounded-lg p-1.5 -m-1.5 ${
+                      className={`relative group transition-all duration-200 rounded-lg px-2 py-0.5 -mx-2 mb-[1.15em] last:mb-0 ${
                         isCurrentlySpoken
                           ? 'ring-2 ring-amber-400 bg-amber-50/40 dark:bg-amber-950/20'
                           : ''
@@ -509,7 +513,7 @@ export const ChapterReader: React.FC<ChapterReaderProps> = ({
                         <button
                           type="button"
                           onClick={() => handleToggleBookmark(index, paragraph)}
-                          className={`absolute -left-7 top-1 p-1 rounded-md opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity cursor-pointer ${
+                          className={`absolute -left-7 top-0.5 p-1 rounded-md opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity cursor-pointer ${
                             hasBookmark ? '!opacity-100 text-amber-600 dark:text-amber-400' : 'text-stone-400 hover:text-stone-700 dark:text-zinc-500 dark:hover:text-zinc-300'
                           }`}
                           title={hasBookmark ? 'Remover marcador' : 'Marcar este parágrafo'}
@@ -518,8 +522,8 @@ export const ChapterReader: React.FC<ChapterReaderProps> = ({
                         </button>
                       )}
 
-                      <p className="relative tracking-normal transition-colors text-stone-850 dark:text-zinc-100">
-                        <span className="font-bold text-[1.45em] leading-none inline-block align-baseline text-stone-900 dark:text-zinc-50">
+                      <p className="m-0 relative tracking-normal transition-colors text-stone-850 dark:text-zinc-100">
+                        <span className="font-bold text-[1.45em] leading-none inline-block align-baseline text-stone-900 dark:text-zinc-50 mr-0.5">
                           {firstLetter}
                         </span>
                         {renderHighlightedContent(restOfParagraph, index)}
@@ -537,7 +541,7 @@ export const ChapterReader: React.FC<ChapterReaderProps> = ({
                     ref={(el) => {
                       paragraphRefs.current[index] = el as any;
                     }}
-                    className={`relative group transition-all duration-200 rounded-lg p-1.5 -m-1.5 ${
+                    className={`relative group transition-all duration-200 rounded-lg px-2 py-0.5 -mx-2 mb-[1.15em] last:mb-0 ${
                       isCurrentlySpoken
                         ? 'ring-2 ring-amber-400 bg-amber-50/40 dark:bg-amber-950/20'
                         : ''
@@ -548,7 +552,7 @@ export const ChapterReader: React.FC<ChapterReaderProps> = ({
                       <button
                         type="button"
                         onClick={() => handleToggleBookmark(index, paragraph)}
-                        className={`absolute -left-7 top-1 p-1 rounded-md opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity cursor-pointer ${
+                        className={`absolute -left-7 top-0.5 p-1 rounded-md opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity cursor-pointer ${
                           hasBookmark ? '!opacity-100 text-amber-600 dark:text-amber-400' : 'text-stone-400 hover:text-stone-700 dark:text-zinc-500 dark:hover:text-zinc-300'
                         }`}
                         title={hasBookmark ? 'Remover marcador' : 'Marcar este parágrafo'}
@@ -558,12 +562,12 @@ export const ChapterReader: React.FC<ChapterReaderProps> = ({
                     )}
 
                     <p
-                      className={`relative tracking-normal transition-colors ${
+                      className={`m-0 relative tracking-normal transition-colors ${
                         isDialogue
-                          ? 'pl-3 sm:pl-4 border-l-2 border-stone-300/50 dark:border-zinc-700 font-serif text-stone-850 dark:text-zinc-100'
+                          ? 'pl-3 sm:pl-3.5 border-l-2 border-stone-300/70 dark:border-zinc-700 font-serif text-stone-850 dark:text-zinc-100'
                           : isQuoteOnly
-                          ? 'pl-4 py-0.5 italic border-l-2 border-stone-300 dark:border-amber-400/50 text-stone-800 dark:text-amber-50/95 font-serif my-1.5'
-                          : 'text-indent-5 sm:text-indent-7 text-stone-850 dark:text-zinc-100'
+                          ? 'pl-3.5 sm:pl-4 py-0.5 italic border-l-2 border-amber-600/70 dark:border-amber-400/60 text-stone-850 dark:text-amber-100/90 font-serif'
+                          : 'text-stone-850 dark:text-zinc-100'
                       }`}
                     >
                       {renderHighlightedContent(paragraph, index)}

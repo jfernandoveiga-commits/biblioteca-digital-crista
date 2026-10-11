@@ -1598,7 +1598,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                     Biblioteca Digital Cristã
                   </span>
                   <span className="text-[11px] text-stone-400 dark:text-zinc-500 mt-0.5 block">
-                    Nome curto: "Bib. Cristã" (≤ 12 carac.)
+                    Nome curto: "Biblioteca Digital Cristã"
                   </span>
                 </div>
 

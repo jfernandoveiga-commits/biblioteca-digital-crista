@@ -203,10 +203,10 @@ export const BibleReader: React.FC<BibleReaderProps> = ({
   }[theme];
 
   const fontSizeClasses = {
-    sm: 'text-[16px] sm:text-[17px] leading-[1.8]',
-    md: 'text-[17.5px] sm:text-[19px] leading-[1.85]',
-    lg: 'text-[19.5px] sm:text-[21px] leading-[1.9]',
-    xl: 'text-[22px] sm:text-[24px] leading-[1.95]',
+    sm: 'text-[16px] sm:text-[17px] leading-[1.7]',
+    md: 'text-[17.5px] sm:text-[19px] leading-[1.7]',
+    lg: 'text-[19.5px] sm:text-[21px] leading-[1.7]',
+    xl: 'text-[22px] sm:text-[24px] leading-[1.7]',
   }[fontSize];
 
   const versesList: BibleVerse[] =
