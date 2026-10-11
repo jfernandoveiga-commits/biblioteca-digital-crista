@@ -5,7 +5,14 @@
  * utilizando credenciais seguras e tokens criptografados.
  */
 
-import { LibraryFeaturesConfig, ContentAvailabilityConfig } from '../types/book';
+import {
+  LibraryFeaturesConfig,
+  ContentAvailabilityConfig,
+  ReaderAccessRecord,
+  ReaderAccessCreateInput,
+  ReaderAccessCreatedResult,
+  ReaderAccessStatus,
+} from '../types/book';
 
 const ADMIN_TOKEN_KEY = 'bib_admin_session_token';
 
@@ -28,6 +35,7 @@ export interface AdminSystemStatus {
   isLibraryLocked: boolean;
   lockReason: string;
   activeReaderSessionsCount: number;
+  totalReadersCount?: number;
   lastPinChangedAt: string | null;
   lastRevokedAt: string | null;
   adminUsername: string;
@@ -423,6 +431,158 @@ export const adminAuthService = {
       return {
         success: false,
         error: 'Erro de conexão ao salvar disponibilidade de livros e capítulos.',
+      };
+    }
+  },
+
+  /* -------------------------------------------------------------------------
+     GESTÃO DOS ACESSOS DOS LEITORES (/api/admin/readers)
+     ------------------------------------------------------------------------- */
+
+  async getReaders(): Promise<{
+    success: boolean;
+    readers?: ReaderAccessRecord[];
+    error?: string;
+  }> {
+    try {
+      const response = await fetch('/api/admin/readers', {
+        method: 'GET',
+        headers: this.getAuthHeaders(),
+        credentials: 'include',
+      });
+
+      const data = await response.json();
+      if (!response.ok || !data.success) {
+        return {
+          success: false,
+          error: data.error || 'Falha ao consultar acessos dos leitores.',
+        };
+      }
+
+      return {
+        success: true,
+        readers: data.readers,
+      };
+    } catch (err) {
+      console.error('[adminAuthService] Erro ao listar leitores:', err);
+      return {
+        success: false,
+        error: 'Erro de conexão com o servidor ao consultar leitores.',
+      };
+    }
+  },
+
+  async createReaderAccess(
+    input: ReaderAccessCreateInput
+  ): Promise<{
+    success: boolean;
+    result?: ReaderAccessCreatedResult;
+    message?: string;
+    error?: string;
+  }> {
+    try {
+      const response = await fetch('/api/admin/readers', {
+        method: 'POST',
+        headers: this.getAuthHeaders(),
+        body: JSON.stringify(input),
+        credentials: 'include',
+      });
+
+      const data = await response.json();
+      if (!response.ok || !data.success) {
+        return {
+          success: false,
+          error: data.error || 'Falha ao criar acesso de leitor.',
+        };
+      }
+
+      return {
+        success: true,
+        result: {
+          access: data.access,
+          pin: data.pin,
+        },
+        message: data.message,
+      };
+    } catch (err) {
+      console.error('[adminAuthService] Erro ao criar acesso de leitor:', err);
+      return {
+        success: false,
+        error: 'Erro de conexão ao cadastrar acesso de leitor.',
+      };
+    }
+  },
+
+  async updateReaderStatus(
+    id: string,
+    status: ReaderAccessStatus
+  ): Promise<{
+    success: boolean;
+    access?: ReaderAccessRecord;
+    message?: string;
+    error?: string;
+  }> {
+    try {
+      const response = await fetch(`/api/admin/readers/${id}/status`, {
+        method: 'PATCH',
+        headers: this.getAuthHeaders(),
+        body: JSON.stringify({ status }),
+        credentials: 'include',
+      });
+
+      const data = await response.json();
+      if (!response.ok || !data.success) {
+        return {
+          success: false,
+          error: data.error || 'Falha ao atualizar estado do leitor.',
+        };
+      }
+
+      return {
+        success: true,
+        access: data.access,
+        message: data.message,
+      };
+    } catch (err) {
+      console.error('[adminAuthService] Erro ao atualizar status do leitor:', err);
+      return {
+        success: false,
+        error: 'Erro de conexão ao atualizar status do leitor.',
+      };
+    }
+  },
+
+  async deleteReaderAccess(
+    id: string
+  ): Promise<{
+    success: boolean;
+    message?: string;
+    error?: string;
+  }> {
+    try {
+      const response = await fetch(`/api/admin/readers/${id}`, {
+        method: 'DELETE',
+        headers: this.getAuthHeaders(),
+        credentials: 'include',
+      });
+
+      const data = await response.json();
+      if (!response.ok || !data.success) {
+        return {
+          success: false,
+          error: data.error || 'Falha ao excluir acesso de leitor.',
+        };
+      }
+
+      return {
+        success: true,
+        message: data.message,
+      };
+    } catch (err) {
+      console.error('[adminAuthService] Erro ao excluir leitor:', err);
+      return {
+        success: false,
+        error: 'Erro de conexão ao excluir acesso.',
       };
     }
   },

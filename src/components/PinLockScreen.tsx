@@ -249,7 +249,7 @@ export const PinLockScreen: React.FC<PinLockScreenProps> = ({
                   <span>Validando no servidor...</span>
                 </>
               ) : (
-                <span>Entrar na Biblioteca</span>
+                <span>Entrar</span>
               )}
             </button>
           </form>
@@ -264,34 +264,24 @@ export const PinLockScreen: React.FC<PinLockScreenProps> = ({
           >
             <div className="flex items-center justify-center gap-1.5">
               <ShieldCheck className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
-              <span>Validação protegida no servidor · Sessão segura criptografada</span>
+              <span>Validação protegida no servidor · Sessão criptografada</span>
             </div>
 
             <PWAInstallButton theme={theme} variant="badge" />
           </div>
         </div>
 
-        {/* Nota explicativa discreta para o proprietário/testador */}
-        <div className="mt-5 text-center space-y-2">
-          <p
-            className={`text-xs ${
-              isDark ? 'text-zinc-400' : 'text-stone-600'
-            }`}
-          >
-            Configurado via variável de ambiente <code className="font-mono text-[11px] px-1 py-0.5 rounded bg-stone-200/50 dark:bg-zinc-800">ACCESS_PIN</code> no Render.
-          </p>
-
+        {/* Acesso exclusivo para administradores */}
+        <div className="mt-5 text-center">
           {onNavigateToAdmin && (
-            <div>
-              <button
-                type="button"
-                onClick={onNavigateToAdmin}
-                className="inline-flex items-center gap-1.5 text-xs text-stone-500 hover:text-stone-800 dark:text-zinc-400 dark:hover:text-zinc-200 transition-colors cursor-pointer py-1 px-2.5 rounded-lg hover:bg-stone-200/50 dark:hover:bg-zinc-900"
-              >
-                <Shield className="w-3.5 h-3.5" />
-                <span>Área Administrativa</span>
-              </button>
-            </div>
+            <button
+              type="button"
+              onClick={onNavigateToAdmin}
+              className="inline-flex items-center gap-1.5 text-xs text-stone-500 hover:text-stone-800 dark:text-zinc-400 dark:hover:text-zinc-200 transition-colors cursor-pointer py-1 px-2.5 rounded-lg hover:bg-stone-200/50 dark:hover:bg-zinc-900"
+            >
+              <Shield className="w-3.5 h-3.5" />
+              <span>Área Administrativa</span>
+            </button>
           )}
         </div>
       </div>

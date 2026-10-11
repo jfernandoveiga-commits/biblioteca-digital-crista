@@ -77,6 +77,20 @@ const DEFAULT_CONTENT_AVAILABILITY: ContentAvailabilityConfig = {
   },
 };
 
+export type ReaderAccessStatus = 'active' | 'blocked' | 'revoked';
+
+export interface ReaderAccessRecord {
+  id: string;
+  name: string;
+  pinHash: string;
+  pinSalt: string;
+  status: ReaderAccessStatus;
+  createdAt: string;
+  expiresAt: string | null;
+  lastUsedAt: string | null;
+  notes?: string;
+}
+
 interface SecurityConfig {
   pinHash: string;
   pinSalt: string;
@@ -90,6 +104,7 @@ interface SecurityConfig {
   sessionsRevokedBefore: number;
   features: LibraryFeaturesConfig;
   contentAvailability: ContentAvailabilityConfig;
+  readerAccesses: ReaderAccessRecord[];
 }
 
 // Funções criptográficas de tempo constante (PBKDF2)
@@ -151,6 +166,25 @@ function loadOrCreateSecurityConfig(): SecurityConfig {
           },
         };
 
+        const readerAccesses: ReaderAccessRecord[] = Array.isArray(parsed.readerAccesses)
+          ? parsed.readerAccesses
+          : [];
+
+        // Se a lista estiver vazia e já houver um pinHash válido, cria o primeiro registro de acesso inicial
+        if (readerAccesses.length === 0 && parsed.pinHash && parsed.pinSalt) {
+          readerAccesses.push({
+            id: 'access-initial-default',
+            name: 'Acesso Padrão Inicial',
+            pinHash: parsed.pinHash,
+            pinSalt: parsed.pinSalt,
+            status: 'active',
+            createdAt: parsed.lastPinChangedAt || new Date().toISOString(),
+            expiresAt: null,
+            lastUsedAt: null,
+            notes: 'Acesso inicial configurado pelo sistema',
+          });
+        }
+
         const config: SecurityConfig = {
           pinHash: parsed.pinHash,
           pinSalt: parsed.pinSalt,
@@ -164,6 +198,7 @@ function loadOrCreateSecurityConfig(): SecurityConfig {
           sessionsRevokedBefore: Number(parsed.sessionsRevokedBefore) || 0,
           features,
           contentAvailability,
+          readerAccesses,
         };
 
         // Salva novamente para garantir que chaves novas sejam persistidas no JSON
@@ -195,6 +230,19 @@ function loadOrCreateSecurityConfig(): SecurityConfig {
     sessionsRevokedBefore: 0,
     features: DEFAULT_FEATURES,
     contentAvailability: DEFAULT_CONTENT_AVAILABILITY,
+    readerAccesses: [
+      {
+        id: 'access-initial-default',
+        name: 'Acesso Geral Inicial',
+        pinHash: initialPinHash,
+        pinSalt: initialPinSalt,
+        status: 'active',
+        createdAt: new Date().toISOString(),
+        expiresAt: null,
+        lastUsedAt: null,
+        notes: 'PIN inicial configurado via variáveis de ambiente',
+      },
+    ],
   };
 
   saveSecurityConfig(initialConfig);
@@ -223,6 +271,8 @@ const securityConfig: SecurityConfig = loadOrCreateSecurityConfig();
 
 interface SessionRecord {
   token: string;
+  accessId?: string;
+  readerName?: string;
   createdAt: number;
   expiresAt: number;
   ip: string;
@@ -526,9 +576,35 @@ app.post('/api/auth/verify-pin', (req, res) => {
     return;
   }
 
-  const isValid = verifyPinHash(pin, securityConfig.pinHash, securityConfig.pinSalt);
+  const cleanPin = pin.trim();
 
-  if (!isValid) {
+  // 1. Procura nas credenciais dos acessos cadastrados (acessos individuais)
+  let matchedAccess: ReaderAccessRecord | null = null;
+  const accesses = securityConfig.readerAccesses || [];
+
+  for (const acc of accesses) {
+    if (verifyPinHash(cleanPin, acc.pinHash, acc.pinSalt)) {
+      matchedAccess = acc;
+      break;
+    }
+  }
+
+  // 2. Se não achou nos acessos individuais mas confere com o PIN legado geral
+  if (!matchedAccess && verifyPinHash(cleanPin, securityConfig.pinHash, securityConfig.pinSalt)) {
+    matchedAccess = {
+      id: 'access-general',
+      name: 'Acesso Geral',
+      pinHash: securityConfig.pinHash,
+      pinSalt: securityConfig.pinSalt,
+      status: 'active',
+      createdAt: securityConfig.lastPinChangedAt,
+      expiresAt: null,
+      lastUsedAt: null,
+    };
+  }
+
+  // Se nenhum PIN conferiu: conta falha no rate limiter
+  if (!matchedAccess) {
     entry.attempts += 1;
     entry.lastAttempt = now;
 
@@ -555,14 +631,58 @@ app.post('/api/auth/verify-pin', (req, res) => {
     return;
   }
 
-  // PIN válido: reseta rate limit
+  // Se o PIN confere, mas o acesso está BLOQUEADO
+  if (matchedAccess.status === 'blocked') {
+    res.status(403).json({
+      success: false,
+      isAccessBlocked: true,
+      error: 'Este acesso foi temporariamente bloqueado pela administração.',
+    });
+    return;
+  }
+
+  // Se o PIN confere, mas o acesso foi REVOGADO
+  if (matchedAccess.status === 'revoked') {
+    res.status(403).json({
+      success: false,
+      isAccessRevoked: true,
+      error: 'Este código de acesso foi revogado pela administração e não é mais válido.',
+    });
+    return;
+  }
+
+  // Se o PIN confere, mas o acesso possui data de expiração que já passou
+  if (matchedAccess.expiresAt) {
+    const expiryTime = new Date(matchedAccess.expiresAt).getTime();
+    if (!isNaN(expiryTime) && now > expiryTime) {
+      res.status(403).json({
+        success: false,
+        isAccessExpired: true,
+        error: 'Este acesso expirou. Solicite um novo PIN ao administrador.',
+      });
+      return;
+    }
+  }
+
+  // PIN válido e acesso ativo: reseta rate limit
   readerRateLimitStore.delete(ip);
+
+  // Atualiza lastUsedAt do acesso e persiste
+  if (matchedAccess.id && matchedAccess.id !== 'access-general') {
+    const accInList = securityConfig.readerAccesses.find((a) => a.id === matchedAccess!.id);
+    if (accInList) {
+      accInList.lastUsedAt = new Date().toISOString();
+      saveSecurityConfig(securityConfig);
+    }
+  }
 
   const token = crypto.randomBytes(32).toString('hex');
   const expiresAt = now + READER_SESSION_LIFETIME_MS;
 
   activeReaderSessions.set(token, {
     token,
+    accessId: matchedAccess.id,
+    readerName: matchedAccess.name,
     createdAt: now,
     expiresAt,
     ip,
@@ -585,6 +705,7 @@ app.post('/api/auth/verify-pin', (req, res) => {
     success: true,
     token,
     expiresAt,
+    readerName: matchedAccess.name,
   });
 });
 
@@ -749,6 +870,7 @@ app.get('/api/admin/status', requireAdminAuth, (_req, res) => {
     isLibraryLocked: securityConfig.isLibraryLocked,
     lockReason: securityConfig.lockReason || '',
     activeReaderSessionsCount: activeReaderSessions.size,
+    totalReadersCount: (securityConfig.readerAccesses || []).length,
     lastPinChangedAt: securityConfig.lastPinChangedAt,
     lastRevokedAt: securityConfig.lastRevokedAt,
     adminUsername: securityConfig.adminUsername,
@@ -933,6 +1055,209 @@ app.post('/api/admin/content-availability', requireAdminAuth, (req, res) => {
     success: true,
     contentAvailability: securityConfig.contentAvailability,
     message: 'Disponibilidade de livros e capítulos atualizada com sucesso.',
+  });
+});
+
+/* ==========================================================================
+   10. GESTÃO DE ACESSOS E PINS DOS LEITORES (/api/admin/readers/*)
+   ========================================================================== */
+
+// Helper para sanitizar o registro de acesso (NUNCA expor hashes ou salts)
+function sanitizeReaderAccess(acc: ReaderAccessRecord) {
+  return {
+    id: acc.id,
+    name: acc.name,
+    status: acc.status,
+    createdAt: acc.createdAt,
+    expiresAt: acc.expiresAt,
+    lastUsedAt: acc.lastUsedAt,
+    notes: acc.notes || '',
+  };
+}
+
+// 10.1 Listar todos os acessos cadastrados
+app.get('/api/admin/readers', requireAdminAuth, (_req, res) => {
+  const list = (securityConfig.readerAccesses || []).map(sanitizeReaderAccess);
+  res.json({
+    success: true,
+    readers: list,
+  });
+});
+
+// 10.2 Criar novo PIN de leitor (individual, gerado ou manual)
+app.post('/api/admin/readers', requireAdminAuth, (req, res) => {
+  const { name, pinMode = 'auto', customPin, expiresAt = null, notes } = req.body || {};
+
+  const cleanName = typeof name === 'string' ? name.trim() : '';
+  if (!cleanName || cleanName.length < 2) {
+    res.status(400).json({
+      success: false,
+      error: 'Informe um nome ou identificador válido para o leitor (mínimo 2 caracteres).',
+    });
+    return;
+  }
+
+  let pinToAssign = '';
+
+  if (pinMode === 'manual') {
+    const rawPin = typeof customPin === 'string' ? customPin.trim() : '';
+    if (!rawPin || rawPin.length < 4 || rawPin.length > 12) {
+      res.status(400).json({
+        success: false,
+        error: 'O PIN manual deve conter entre 4 e 12 dígitos ou caracteres.',
+      });
+      return;
+    }
+    pinToAssign = rawPin;
+  } else {
+    // Modo automático: gera PIN numérico de 6 dígitos aleatório criptograficamente seguro
+    const randomNum = crypto.randomInt(100000, 999999);
+    pinToAssign = String(randomNum);
+  }
+
+  // Verifica se o PIN já está em uso por algum acesso existente ou se é duplicado
+  const existingAccesses = securityConfig.readerAccesses || [];
+  for (const existing of existingAccesses) {
+    if (verifyPinHash(pinToAssign, existing.pinHash, existing.pinSalt)) {
+      res.status(409).json({
+        success: false,
+        error: 'Este PIN já está em uso por outro leitor cadastrado. Escolha outro código ou gere automaticamente.',
+      });
+      return;
+    }
+  }
+
+  // Também verifica contra o PIN mestre legado se ativo
+  if (verifyPinHash(pinToAssign, securityConfig.pinHash, securityConfig.pinSalt)) {
+    res.status(409).json({
+      success: false,
+      error: 'Este código coincide com o PIN mestre do sistema. Escolha um código diferente.',
+    });
+    return;
+  }
+
+  // Validação da data de expiração, se fornecida
+  let cleanExpiresAt: string | null = null;
+  if (expiresAt) {
+    const parsedDate = new Date(expiresAt);
+    if (isNaN(parsedDate.getTime())) {
+      res.status(400).json({
+        success: false,
+        error: 'Data de expiração inválida.',
+      });
+      return;
+    }
+    if (parsedDate.getTime() <= Date.now()) {
+      res.status(400).json({
+        success: false,
+        error: 'A data de expiração deve ser posterior ao momento atual.',
+      });
+      return;
+    }
+    cleanExpiresAt = parsedDate.toISOString();
+  }
+
+  const salt = crypto.randomBytes(16).toString('hex');
+  const hash = hashPin(pinToAssign, salt);
+  const id = `reader-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`;
+
+  const newRecord: ReaderAccessRecord = {
+    id,
+    name: cleanName,
+    pinHash: hash,
+    pinSalt: salt,
+    status: 'active',
+    createdAt: new Date().toISOString(),
+    expiresAt: cleanExpiresAt,
+    lastUsedAt: null,
+    notes: typeof notes === 'string' ? notes.trim() : '',
+  };
+
+  if (!securityConfig.readerAccesses) {
+    securityConfig.readerAccesses = [];
+  }
+  securityConfig.readerAccesses.unshift(newRecord);
+  saveSecurityConfig(securityConfig);
+
+  // Retorna o PIN em texto puro APENAS NESTA RESPOSTA de criação (para exibição única)
+  res.status(201).json({
+    success: true,
+    access: sanitizeReaderAccess(newRecord),
+    pin: pinToAssign,
+    message: 'Acesso do leitor criado com sucesso.',
+  });
+});
+
+// 10.3 Alterar estado de um acesso (bloquear / reativar / revogar)
+app.patch('/api/admin/readers/:id/status', requireAdminAuth, (req, res) => {
+  const { id } = req.params;
+  const { status: targetStatus } = req.body || {};
+
+  const allowedStatuses: ReaderAccessStatus[] = ['active', 'blocked', 'revoked'];
+  if (!targetStatus || !allowedStatuses.includes(targetStatus)) {
+    res.status(400).json({
+      success: false,
+      error: 'Status inválido. Escolha entre: active, blocked ou revoked.',
+    });
+    return;
+  }
+
+  const target = (securityConfig.readerAccesses || []).find((a) => a.id === id);
+  if (!target) {
+    res.status(404).json({
+      success: false,
+      error: 'Acesso de leitor não encontrado.',
+    });
+    return;
+  }
+
+  target.status = targetStatus;
+
+  // Se bloqueado ou revogado, derruba sessões ativas deste leitor imediatamente
+  if (targetStatus === 'blocked' || targetStatus === 'revoked') {
+    for (const [token, sess] of activeReaderSessions.entries()) {
+      if (sess.accessId === id) {
+        activeReaderSessions.delete(token);
+      }
+    }
+  }
+
+  saveSecurityConfig(securityConfig);
+
+  res.json({
+    success: true,
+    access: sanitizeReaderAccess(target),
+    message: `Status do acesso de "${target.name}" atualizado para: ${targetStatus}.`,
+  });
+});
+
+// 10.4 Excluir acesso de leitor definitivamente
+app.delete('/api/admin/readers/:id', requireAdminAuth, (req, res) => {
+  const { id } = req.params;
+
+  const index = (securityConfig.readerAccesses || []).findIndex((a) => a.id === id);
+  if (index === -1) {
+    res.status(404).json({
+      success: false,
+      error: 'Acesso não encontrado.',
+    });
+    return;
+  }
+
+  const removed = securityConfig.readerAccesses.splice(index, 1)[0];
+
+  // Encerra qualquer sessão deste leitor
+  for (const [token, sess] of activeReaderSessions.entries()) {
+    if (sess.accessId === id) {
+      activeReaderSessions.delete(token);
+    }
+  }
+
+  saveSecurityConfig(securityConfig);
+
+  res.json({
+    success: true,
+    message: `Acesso de "${removed.name}" excluído com sucesso.`,
   });
 });
 

@@ -33,5 +33,62 @@
         "chapters": {}
       }
     }
-  }
+  },
+  "readerAccesses": [
+    {
+      "id": "reader-1791725566031-f8317817",
+      "name": "Leitor Expirável",
+      "pinHash": "d899eecd6c7e4717889b7d50c73fcb8800acb9265e270bcec607e6d3d7f7591c",
+      "pinSalt": "560972e56212bc4fb5ea1a4449bc8c9f",
+      "status": "active",
+      "createdAt": "2026-10-11T13:32:46.032Z",
+      "expiresAt": "2026-10-11T13:32:47.518Z",
+      "lastUsedAt": "2026-10-11T13:32:46.037Z",
+      "notes": ""
+    },
+    {
+      "id": "reader-1791725557496-b49ea6b4",
+      "name": "Leitor Para Bloquear",
+      "pinHash": "8803cdf5c0afd60ae398249fe66a58cbd7139cff345fc13c74c16da7e37f65a5",
+      "pinSalt": "aa2ad28ef1dde445864af985eba8d1f7",
+      "status": "revoked",
+      "createdAt": "2026-10-11T13:32:37.497Z",
+      "expiresAt": null,
+      "lastUsedAt": "2026-10-11T13:32:37.515Z",
+      "notes": ""
+    },
+    {
+      "id": "reader-1791725548520-46e11574",
+      "name": "Leitor Teste Manual",
+      "pinHash": "c82f428c0e9dc98e79bb91c7aabf589510fac95794be0e94555317196180df1a",
+      "pinSalt": "64d71aeeafe8a270de023da6b5dae47d",
+      "status": "active",
+      "createdAt": "2026-10-11T13:32:28.520Z",
+      "expiresAt": null,
+      "lastUsedAt": null,
+      "notes": "Criado manual"
+    },
+    {
+      "id": "reader-1791725548510-c93bfc7f",
+      "name": "Leitor Teste Auto",
+      "pinHash": "5823793fabf0c1e4ee13a70bd9b4c968d561cb05e98d5dcdc849c5f9ac42eef6",
+      "pinSalt": "2a0955f0c3d47d86f1360146dd6cdbe3",
+      "status": "active",
+      "createdAt": "2026-10-11T13:32:28.510Z",
+      "expiresAt": null,
+      "lastUsedAt": "2026-10-11T13:32:28.531Z",
+      "notes": "Criado via teste"
+    },
+    {
+      "id": "access-initial-default",
+      "name": "Acesso Padrão Inicial",
+      "pinHash": "68a042a5654d3211bf2a8a27ed971090e7d0514c8e49110cc37462d75168482f",
+      "pinSalt": "61985b4a8abf3cc0219d501b4a2b61b5",
+      "status": "active",
+      "createdAt": "2026-10-10T16:41:50.949Z",
+      "expiresAt": null,
+      "lastUsedAt": null,
+      "notes": "Acesso inicial configurado pelo sistema"
+    }
+  ]
 }

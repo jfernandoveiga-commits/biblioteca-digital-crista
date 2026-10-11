@@ -34,6 +34,14 @@ import {
   Smartphone,
   Download,
   Share2,
+  UserCheck,
+  UserX,
+  UserPlus,
+  Trash2,
+  Copy,
+  Calendar,
+  Sparkles,
+  Clock,
 } from 'lucide-react';
 import { adminAuthService, AdminSystemStatus } from '../services/adminAuthService';
 import {
@@ -42,6 +50,8 @@ import {
   ContentAvailabilityConfig,
   DEFAULT_LIBRARY_FEATURES,
   Book,
+  ReaderAccessRecord,
+  ReaderAccessStatus,
 } from '../types/book';
 import { libraryBooks } from '../data/booksCatalog';
 import { PWAInstallButton } from './PWAInstallButton';
@@ -51,14 +61,14 @@ interface AdminPanelProps {
   onNavigateToLibrary: () => void;
 }
 
-type AdminTab = 'security' | 'features' | 'books' | 'pwa';
+type AdminTab = 'readers' | 'features' | 'books' | 'security' | 'pwa';
 
 export const AdminPanel: React.FC<AdminPanelProps> = ({
   theme = 'cream',
   onNavigateToLibrary,
 }) => {
   // Aba ativa do painel
-  const [activeTab, setActiveTab] = useState<AdminTab>('features');
+  const [activeTab, setActiveTab] = useState<AdminTab>('readers');
 
   // Estado de autenticação do administrador
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
@@ -78,7 +88,33 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const [actionSuccessMessage, setActionSuccessMessage] = useState<string | null>(null);
   const [actionErrorMessage, setActionErrorMessage] = useState<string | null>(null);
 
-  // Formulário de Alteração de PIN
+  // GESTÃO DOS ACESSOS DOS LEITORES
+  const [readers, setReaders] = useState<ReaderAccessRecord[]>([]);
+  const [isLoadingReaders, setIsLoadingReaders] = useState<boolean>(false);
+  const [newReaderName, setNewReaderName] = useState<string>('');
+  const [pinMode, setPinMode] = useState<'auto' | 'manual'>('auto');
+  const [customPinInput, setCustomPinInput] = useState<string>('');
+  const [readerNotes, setReaderNotes] = useState<string>('');
+  const [readerExpiryDays, setReaderExpiryDays] = useState<string>('never'); // 'never', '7', '30', '90', 'custom'
+  const [customExpiryDate, setCustomExpiryDate] = useState<string>('');
+  const [isCreatingReader, setIsCreatingReader] = useState<boolean>(false);
+  const [searchTerm, setSearchTerm] = useState<string>('');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'blocked' | 'revoked'>('all');
+
+  // Modal de Exibição Única e Segura do PIN Recém-Criado
+  const [createdPinModal, setCreatedPinModal] = useState<{
+    isOpen: boolean;
+    readerName: string;
+    pin: string;
+    copied: boolean;
+  }>({
+    isOpen: false,
+    readerName: '',
+    pin: '',
+    copied: false,
+  });
+
+  // Formulário de Alteração de PIN Geral/Legado
   const [newPin, setNewPin] = useState<string>('');
   const [confirmPin, setConfirmPin] = useState<string>('');
   const [showNewPin, setShowNewPin] = useState<boolean>(false);
@@ -175,11 +211,156 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     }
   };
 
+  // Carrega lista de leitores cadastrados
+  const fetchReaders = async () => {
+    setIsLoadingReaders(true);
+    try {
+      const res = await adminAuthService.getReaders();
+      if (res.success && res.readers) {
+        setReaders(res.readers);
+      }
+    } catch {
+      console.warn('Erro ao carregar lista de leitores');
+    } finally {
+      setIsLoadingReaders(false);
+    }
+  };
+
   useEffect(() => {
     if (isAuthenticated) {
       fetchStatus();
+      fetchReaders();
     }
   }, [isAuthenticated]);
+
+  // Criação de novo PIN de Leitor
+  const handleCreateReader = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newReaderName.trim()) {
+      setActionErrorMessage('Informe o nome ou identificador do leitor.');
+      return;
+    }
+
+    if (pinMode === 'manual') {
+      const pin = customPinInput.trim();
+      if (pin.length < 4 || pin.length > 12) {
+        setActionErrorMessage('O PIN manual deve conter entre 4 e 12 dígitos.');
+        return;
+      }
+    }
+
+    // Calcula data de expiração
+    let calculatedExpiresAt: string | null = null;
+    if (readerExpiryDays === 'custom' && customExpiryDate) {
+      calculatedExpiresAt = new Date(customExpiryDate).toISOString();
+    } else if (readerExpiryDays !== 'never') {
+      const days = parseInt(readerExpiryDays, 10);
+      if (!isNaN(days) && days > 0) {
+        const d = new Date();
+        d.setDate(d.getDate() + days);
+        calculatedExpiresAt = d.toISOString();
+      }
+    }
+
+    setIsCreatingReader(true);
+    setActionErrorMessage(null);
+
+    try {
+      const res = await adminAuthService.createReaderAccess({
+        name: newReaderName.trim(),
+        pinMode,
+        customPin: pinMode === 'manual' ? customPinInput.trim() : undefined,
+        expiresAt: calculatedExpiresAt,
+        notes: readerNotes.trim() || undefined,
+      });
+
+      if (res.success && res.result) {
+        // Exibe o PIN na modal de visualização única
+        setCreatedPinModal({
+          isOpen: true,
+          readerName: res.result.access.name,
+          pin: res.result.pin,
+          copied: false,
+        });
+
+        // Limpa formulário
+        setNewReaderName('');
+        setCustomPinInput('');
+        setReaderNotes('');
+        setReaderExpiryDays('never');
+        setCustomExpiryDate('');
+        setPinMode('auto');
+
+        setActionSuccessMessage(`Acesso criado com sucesso para "${res.result.access.name}".`);
+        await fetchReaders();
+        await fetchStatus();
+      } else {
+        setActionErrorMessage(res.error || 'Falha ao criar acesso de leitor.');
+      }
+    } catch {
+      setActionErrorMessage('Erro de rede ao criar acesso de leitor.');
+    } finally {
+      setIsCreatingReader(false);
+    }
+  };
+
+  // Alteração de estado de leitor (bloquear / reativar / revogar) com confirmação
+  const handleUpdateReaderStatus = (reader: ReaderAccessRecord, targetStatus: ReaderAccessStatus) => {
+    const actionLabel =
+      targetStatus === 'blocked' ? 'Bloquear' : targetStatus === 'active' ? 'Reativar' : 'Revogar';
+
+    setConfirmModal({
+      isOpen: true,
+      title: `${actionLabel} Acesso de "${reader.name}"?`,
+      description:
+        targetStatus === 'blocked'
+          ? `O leitor "${reader.name}" não conseguirá mais entrar na biblioteca até ser reativado. Sua sessão atual será encerrada imediatamente.`
+          : targetStatus === 'revoked'
+          ? `O PIN do leitor "${reader.name}" será permanentemente invalidado e revogado no servidor.`
+          : `O leitor "${reader.name}" voltará a ter acesso normal com seu PIN cadastrado.`,
+      confirmText: `Sim, ${actionLabel}`,
+      variant: targetStatus === 'revoked' ? 'danger' : targetStatus === 'blocked' ? 'warning' : 'primary',
+      action: async () => {
+        try {
+          const res = await adminAuthService.updateReaderStatus(reader.id, targetStatus);
+          if (res.success) {
+            setActionSuccessMessage(res.message || `Acesso de "${reader.name}" atualizado.`);
+            await fetchReaders();
+            await fetchStatus();
+          } else {
+            setActionErrorMessage(res.error || 'Falha ao alterar estado do acesso.');
+          }
+        } finally {
+          setConfirmModal((prev) => ({ ...prev, isOpen: false }));
+        }
+      },
+    });
+  };
+
+  // Exclusão definitiva de leitor
+  const handleDeleteReader = (reader: ReaderAccessRecord) => {
+    setConfirmModal({
+      isOpen: true,
+      title: `Excluir Registro de "${reader.name}"?`,
+      description: `Esta ação removerá definitivamente o cadastro de "${reader.name}". Qualquer sessão associada será encerrada.`,
+      confirmText: 'Sim, Excluir Registro',
+      variant: 'danger',
+      action: async () => {
+        try {
+          const res = await adminAuthService.deleteReaderAccess(reader.id);
+          if (res.success) {
+            setActionSuccessMessage(res.message || `Registro de "${reader.name}" excluído.`);
+            await fetchReaders();
+            await fetchStatus();
+          } else {
+            setActionErrorMessage(res.error || 'Falha ao excluir registro.');
+          }
+        } finally {
+          setConfirmModal((prev) => ({ ...prev, isOpen: false }));
+        }
+      },
+    });
+  };
 
   // Limpa mensagens temporárias após 6 segundos
   useEffect(() => {
@@ -787,6 +968,25 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         {/* NAVEGAÇÃO DE ABAS */}
         <div className="max-w-6xl mx-auto px-4 sm:px-6 flex items-center gap-1 border-t border-stone-100 dark:border-zinc-800/80 overflow-x-auto py-1">
           <button
+            onClick={() => setActiveTab('readers')}
+            className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-medium transition-colors whitespace-nowrap cursor-pointer ${
+              activeTab === 'readers'
+                ? isDark
+                  ? 'bg-amber-500/20 text-amber-300 font-semibold border border-amber-500/30'
+                  : 'bg-stone-900 text-stone-50 font-semibold'
+                : 'text-stone-600 dark:text-zinc-400 hover:bg-black/5 dark:hover:bg-zinc-800'
+            }`}
+          >
+            <Users className="w-3.5 h-3.5" />
+            <span>Acessos dos Leitores</span>
+            {readers.length > 0 && (
+              <span className="ml-0.5 px-1.5 py-0.2 rounded-full text-[10px] bg-amber-500/20 text-amber-600 dark:text-amber-400 font-mono font-bold">
+                {readers.length}
+              </span>
+            )}
+          </button>
+
+          <button
             onClick={() => setActiveTab('features')}
             className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-medium transition-colors whitespace-nowrap cursor-pointer ${
               activeTab === 'features'
@@ -891,6 +1091,483 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 
       {/* CONTEÚDO PRINCIPAL DAS ABAS */}
       <main className="flex-1 max-w-6xl w-full mx-auto px-4 sm:px-6 py-6 space-y-6">
+        {/* =========================================================================
+            ABA 0: ACESSOS DOS LEITORES (GESTÃO DE PINS INDIVIDUAIS)
+            ========================================================================= */}
+        {activeTab === 'readers' && (
+          <section className="space-y-6 animate-in fade-in duration-200 font-sans">
+            {/* Introdução e métricas de leitores */}
+            <div
+              className={`p-5 sm:p-6 rounded-2xl border transition-all ${
+                isDark ? 'bg-zinc-900/80 border-zinc-800' : 'bg-white border-stone-200 shadow-xs'
+              }`}
+            >
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div>
+                  <div className="flex items-center gap-2.5 mb-1">
+                    <Users className="w-5 h-5 text-amber-600 dark:text-amber-400" />
+                    <h2 className="text-base sm:text-lg font-serif font-bold text-stone-900 dark:text-zinc-50">
+                      Acessos dos Leitores
+                    </h2>
+                  </div>
+                  <p className="text-xs sm:text-sm text-stone-500 dark:text-zinc-400 font-serif max-w-2xl leading-relaxed">
+                    Cadastre leitores, gere ou defina PINs individuais, acompanhe o estado dos acessos,
+                    estabeleça validades ou bloqueie e revogue permissões a qualquer momento com validação no servidor.
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-3 shrink-0">
+                  <button
+                    onClick={fetchReaders}
+                    disabled={isLoadingReaders}
+                    className="px-3 py-2 rounded-xl text-xs font-semibold border border-stone-200 dark:border-zinc-700 text-stone-700 dark:text-zinc-200 hover:bg-stone-100 dark:hover:bg-zinc-800 transition-colors flex items-center gap-1.5 cursor-pointer"
+                    title="Atualizar lista de leitores"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${isLoadingReaders ? 'animate-spin' : ''}`} />
+                    <span>Atualizar</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Cards de resumo rápido */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-5 pt-4 border-t border-stone-100 dark:border-zinc-800">
+                <div className="p-3 rounded-xl bg-stone-50 dark:bg-zinc-800/50 border border-stone-200/50 dark:border-zinc-700/50">
+                  <span className="text-[11px] font-medium text-stone-500 dark:text-zinc-400 block">Total Cadastrado</span>
+                  <span className="text-lg font-bold text-stone-900 dark:text-zinc-100 mt-0.5 block font-mono">
+                    {readers.length}
+                  </span>
+                </div>
+
+                <div className="p-3 rounded-xl bg-emerald-50/50 dark:bg-emerald-950/20 border border-emerald-200/50 dark:border-emerald-900/30">
+                  <span className="text-[11px] font-medium text-emerald-700 dark:text-emerald-400 block">Ativos</span>
+                  <span className="text-lg font-bold text-emerald-700 dark:text-emerald-300 mt-0.5 block font-mono">
+                    {readers.filter((r) => r.status === 'active').length}
+                  </span>
+                </div>
+
+                <div className="p-3 rounded-xl bg-amber-50/50 dark:bg-amber-950/20 border border-amber-200/50 dark:border-amber-900/30">
+                  <span className="text-[11px] font-medium text-amber-700 dark:text-amber-400 block">Bloqueados</span>
+                  <span className="text-lg font-bold text-amber-700 dark:text-amber-300 mt-0.5 block font-mono">
+                    {readers.filter((r) => r.status === 'blocked').length}
+                  </span>
+                </div>
+
+                <div className="p-3 rounded-xl bg-rose-50/50 dark:bg-rose-950/20 border border-rose-200/50 dark:border-rose-900/30">
+                  <span className="text-[11px] font-medium text-rose-700 dark:text-rose-400 block">Revogados</span>
+                  <span className="text-lg font-bold text-rose-700 dark:text-rose-300 mt-0.5 block font-mono">
+                    {readers.filter((r) => r.status === 'revoked').length}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Formulário de Criação de Novo Acesso / PIN */}
+            <div
+              className={`p-6 rounded-2xl border transition-all ${
+                isDark ? 'bg-zinc-900/80 border-zinc-800' : 'bg-white border-stone-200 shadow-xs'
+              }`}
+            >
+              <div className="flex items-center gap-2 mb-2">
+                <UserPlus className="w-5 h-5 text-amber-600 dark:text-amber-400" />
+                <h3 className="text-base font-serif font-bold text-stone-900 dark:text-zinc-50">
+                  Novo Acesso de Leitor
+                </h3>
+              </div>
+              <p className="text-xs text-stone-500 dark:text-zinc-400 font-serif leading-relaxed mb-5">
+                Crie um PIN exclusivo para um leitor ou grupo. O código é validado no servidor com PBKDF2 e
+                será exibido <strong>uma única vez</strong> ao salvar para que você possa entregá-lo com segurança.
+              </p>
+
+              <form onSubmit={handleCreateReader} className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* Nome do Leitor */}
+                  <div>
+                    <label className="block text-xs font-medium text-stone-700 dark:text-zinc-300 mb-1.5">
+                      Identificação do Usuário / Leitor <span className="text-rose-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={newReaderName}
+                      onChange={(e) => setNewReaderName(e.target.value)}
+                      placeholder="Ex: João da Silva ou Grupo de Jovens"
+                      className={`w-full px-3.5 py-2.5 rounded-xl text-sm border transition-colors outline-hidden focus:ring-2 focus:ring-amber-500/40 ${
+                        isDark
+                          ? 'bg-zinc-800 border-zinc-700 text-zinc-100 placeholder:text-zinc-500 focus:border-amber-400'
+                          : 'bg-stone-50 border-stone-300 text-stone-900 placeholder:text-stone-400 focus:border-stone-500'
+                      }`}
+                    />
+                  </div>
+
+                  {/* Modo do PIN (Automático ou Manual) */}
+                  <div>
+                    <label className="block text-xs font-medium text-stone-700 dark:text-zinc-300 mb-1.5">
+                      Geração do PIN
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setPinMode('auto')}
+                        className={`flex-1 py-2 px-3 rounded-xl text-xs font-semibold border transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                          pinMode === 'auto'
+                            ? isDark
+                              ? 'bg-amber-500/20 text-amber-300 border-amber-500/40 shadow-xs'
+                              : 'bg-stone-900 text-white border-stone-900'
+                            : 'border-stone-200 dark:border-zinc-700 text-stone-600 dark:text-zinc-400 hover:bg-stone-100 dark:hover:bg-zinc-800'
+                        }`}
+                      >
+                        <Sparkles className="w-3.5 h-3.5" />
+                        <span>Gerar Automático (6 dígitos)</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setPinMode('manual')}
+                        className={`flex-1 py-2 px-3 rounded-xl text-xs font-semibold border transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                          pinMode === 'manual'
+                            ? isDark
+                              ? 'bg-amber-500/20 text-amber-300 border-amber-500/40 shadow-xs'
+                              : 'bg-stone-900 text-white border-stone-900'
+                            : 'border-stone-200 dark:border-zinc-700 text-stone-600 dark:text-zinc-400 hover:bg-stone-100 dark:hover:bg-zinc-800'
+                        }`}
+                      >
+                        <KeyRound className="w-3.5 h-3.5" />
+                        <span>Definir Manualmente</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Campo de PIN Manual se selecionado */}
+                {pinMode === 'manual' && (
+                  <div className="p-4 rounded-xl bg-amber-500/5 border border-amber-500/20 animate-in fade-in duration-150">
+                    <label className="block text-xs font-medium text-stone-700 dark:text-zinc-300 mb-1.5">
+                      PIN Personalizado (entre 4 e 12 dígitos) <span className="text-rose-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      required
+                      value={customPinInput}
+                      onChange={(e) => setCustomPinInput(e.target.value)}
+                      placeholder="Ex: 849201"
+                      className={`w-full max-w-sm px-3.5 py-2.5 rounded-xl text-sm font-mono tracking-widest border transition-colors outline-hidden focus:ring-2 focus:ring-amber-500/40 ${
+                        isDark
+                          ? 'bg-zinc-800 border-zinc-700 text-zinc-100 placeholder:text-zinc-500 focus:border-amber-400'
+                          : 'bg-white border-stone-300 text-stone-900 placeholder:text-stone-400 focus:border-stone-500'
+                      }`}
+                    />
+                    <p className="text-[11px] text-stone-500 dark:text-zinc-400 mt-1.5">
+                      O servidor rejeitará automaticamente códigos duplicados que já pertençam a outros usuários.
+                    </p>
+                  </div>
+                )}
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* Validade / Expiração */}
+                  <div>
+                    <label className="block text-xs font-medium text-stone-700 dark:text-zinc-300 mb-1.5 flex items-center gap-1.5">
+                      <Calendar className="w-3.5 h-3.5" />
+                      <span>Validade do Acesso</span>
+                    </label>
+                    <select
+                      value={readerExpiryDays}
+                      onChange={(e) => setReaderExpiryDays(e.target.value)}
+                      className={`w-full px-3.5 py-2.5 rounded-xl text-sm border transition-colors outline-hidden focus:ring-2 focus:ring-amber-500/40 cursor-pointer ${
+                        isDark
+                          ? 'bg-zinc-800 border-zinc-700 text-zinc-100 focus:border-amber-400'
+                          : 'bg-stone-50 border-stone-300 text-stone-900 focus:border-stone-500'
+                      }`}
+                    >
+                      <option value="never">Sem expiração (Acesso permanente)</option>
+                      <option value="7">7 dias (1 semana)</option>
+                      <option value="30">30 dias (1 mês)</option>
+                      <option value="90">90 dias (3 meses)</option>
+                      <option value="custom">Data e hora específica...</option>
+                    </select>
+
+                    {readerExpiryDays === 'custom' && (
+                      <input
+                        type="datetime-local"
+                        required
+                        value={customExpiryDate}
+                        onChange={(e) => setCustomExpiryDate(e.target.value)}
+                        className={`w-full mt-2 px-3.5 py-2 rounded-xl text-xs border transition-colors outline-hidden ${
+                          isDark
+                            ? 'bg-zinc-800 border-zinc-700 text-zinc-100'
+                            : 'bg-stone-50 border-stone-300 text-stone-900'
+                        }`}
+                      />
+                    )}
+                  </div>
+
+                  {/* Notas internas */}
+                  <div>
+                    <label className="block text-xs font-medium text-stone-700 dark:text-zinc-300 mb-1.5">
+                      Observações Internas (opcional)
+                    </label>
+                    <input
+                      type="text"
+                      value={readerNotes}
+                      onChange={(e) => setReaderNotes(e.target.value)}
+                      placeholder="Ex: Aluno da EBD / Turma 2"
+                      className={`w-full px-3.5 py-2.5 rounded-xl text-sm border transition-colors outline-hidden focus:ring-2 focus:ring-amber-500/40 ${
+                        isDark
+                          ? 'bg-zinc-800 border-zinc-700 text-zinc-100 placeholder:text-zinc-500 focus:border-amber-400'
+                          : 'bg-stone-50 border-stone-300 text-stone-900 placeholder:text-stone-400 focus:border-stone-500'
+                      }`}
+                    />
+                  </div>
+                </div>
+
+                <div className="pt-2">
+                  <button
+                    type="submit"
+                    disabled={isCreatingReader || !newReaderName.trim()}
+                    className="py-2.5 px-4 rounded-xl bg-stone-900 hover:bg-stone-800 dark:bg-amber-500 dark:hover:bg-amber-400 text-stone-50 dark:text-zinc-950 text-xs font-semibold transition-all shadow-xs disabled:opacity-50 flex items-center gap-2 cursor-pointer"
+                  >
+                    {isCreatingReader ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        <span>Criando Acesso no Servidor...</span>
+                      </>
+                    ) : (
+                      <>
+                        <KeyRound className="w-4 h-4" />
+                        <span>Gerar e Cadastrar PIN</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </form>
+            </div>
+
+            {/* Lista dos Acessos Cadastrados */}
+            <div
+              className={`p-6 rounded-2xl border transition-all ${
+                isDark ? 'bg-zinc-900/80 border-zinc-800' : 'bg-white border-stone-200 shadow-xs'
+              }`}
+            >
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-5 pb-4 border-b border-stone-100 dark:border-zinc-800">
+                <div>
+                  <h3 className="text-base font-serif font-bold text-stone-900 dark:text-zinc-50">
+                    Acessos Cadastrados ({readers.length})
+                  </h3>
+                  <p className="text-xs text-stone-500 dark:text-zinc-400 font-sans mt-0.5">
+                    Gerencie o estado de cada leitor. Bloqueios e revogações têm efeito imediato.
+                  </p>
+                </div>
+
+                {/* Filtros e Busca */}
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="relative">
+                    <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-stone-400" />
+                    <input
+                      type="text"
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
+                      placeholder="Buscar por nome..."
+                      className={`pl-8 pr-3 py-1.5 rounded-xl text-xs border transition-colors outline-hidden ${
+                        isDark
+                          ? 'bg-zinc-800 border-zinc-700 text-zinc-100 placeholder:text-zinc-500'
+                          : 'bg-stone-50 border-stone-300 text-stone-900 placeholder:text-stone-400'
+                      }`}
+                    />
+                  </div>
+
+                  <select
+                    value={statusFilter}
+                    onChange={(e: any) => setStatusFilter(e.target.value)}
+                    className={`px-3 py-1.5 rounded-xl text-xs border transition-colors outline-hidden cursor-pointer ${
+                      isDark
+                        ? 'bg-zinc-800 border-zinc-700 text-zinc-100'
+                        : 'bg-stone-50 border-stone-300 text-stone-900'
+                    }`}
+                  >
+                    <option value="all">Todos os Estados</option>
+                    <option value="active">Apenas Ativos</option>
+                    <option value="blocked">Apenas Bloqueados</option>
+                    <option value="revoked">Apenas Revogados</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Tabela / Lista de Leitores */}
+              {isLoadingReaders ? (
+                <div className="py-12 flex flex-col items-center justify-center gap-2 text-stone-400">
+                  <Loader2 className="w-6 h-6 animate-spin text-amber-500" />
+                  <span className="text-xs font-serif italic">Carregando acessos dos leitores...</span>
+                </div>
+              ) : readers.length === 0 ? (
+                <div className="py-12 text-center text-stone-400 dark:text-zinc-500">
+                  <Users className="w-8 h-8 mx-auto mb-2 opacity-40" />
+                  <p className="text-xs font-serif">Nenhum acesso de leitor cadastrado até o momento.</p>
+                  <p className="text-[11px] mt-1 text-stone-400">
+                    Utilize o formulário acima para gerar o primeiro PIN.
+                  </p>
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs">
+                    <thead>
+                      <tr className="border-b border-stone-200 dark:border-zinc-800 text-stone-500 dark:text-zinc-400 uppercase tracking-wider text-[10px]">
+                        <th className="py-3 px-3">Identificação / Leitor</th>
+                        <th className="py-3 px-3">Estado</th>
+                        <th className="py-3 px-3">Data de Criação</th>
+                        <th className="py-3 px-3">Validade / Expiração</th>
+                        <th className="py-3 px-3">Último Acesso</th>
+                        <th className="py-3 px-3 text-right">Ações</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-stone-100 dark:divide-zinc-800/60">
+                      {readers
+                        .filter((r) => {
+                          const matchesSearch =
+                            !searchTerm.trim() ||
+                            r.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                            (r.notes && r.notes.toLowerCase().includes(searchTerm.toLowerCase()));
+                          const matchesStatus = statusFilter === 'all' || r.status === statusFilter;
+                          return matchesSearch && matchesStatus;
+                        })
+                        .map((reader) => {
+                          const isExpired =
+                            reader.expiresAt && new Date(reader.expiresAt).getTime() < Date.now();
+
+                          return (
+                            <tr
+                              key={reader.id}
+                              className={`transition-colors ${
+                                isDark ? 'hover:bg-zinc-800/40' : 'hover:bg-stone-50/70'
+                              } ${
+                                reader.status === 'blocked'
+                                  ? 'opacity-70 bg-amber-500/5'
+                                  : reader.status === 'revoked'
+                                  ? 'opacity-50 bg-rose-500/5'
+                                  : ''
+                              }`}
+                            >
+                              {/* Nome e Notas */}
+                              <td className="py-3.5 px-3">
+                                <div className="font-semibold text-stone-900 dark:text-zinc-100 text-sm">
+                                  {reader.name}
+                                </div>
+                                {reader.notes && (
+                                  <div className="text-[11px] text-stone-500 dark:text-zinc-400 italic mt-0.5">
+                                    {reader.notes}
+                                  </div>
+                                )}
+                              </td>
+
+                              {/* Estado do Acesso */}
+                              <td className="py-3.5 px-3 whitespace-nowrap">
+                                {reader.status === 'active' ? (
+                                  isExpired ? (
+                                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300">
+                                      <Clock className="w-3 h-3" />
+                                      Expirado
+                                    </span>
+                                  ) : (
+                                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300">
+                                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                                      Ativo
+                                    </span>
+                                  )
+                                ) : reader.status === 'blocked' ? (
+                                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300">
+                                    <Lock className="w-3 h-3" />
+                                    Bloqueado
+                                  </span>
+                                ) : (
+                                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300">
+                                    <X className="w-3 h-3" />
+                                    Revogado
+                                  </span>
+                                )}
+                              </td>
+
+                              {/* Data de Criação */}
+                              <td className="py-3.5 px-3 text-stone-600 dark:text-zinc-300 whitespace-nowrap font-mono text-[11px]">
+                                {formatDate(reader.createdAt)}
+                              </td>
+
+                              {/* Validade */}
+                              <td className="py-3.5 px-3 text-stone-600 dark:text-zinc-300 whitespace-nowrap text-[11px]">
+                                {reader.expiresAt ? (
+                                  <span className={isExpired ? 'text-rose-600 font-bold' : ''}>
+                                    {formatDate(reader.expiresAt)}
+                                  </span>
+                                ) : (
+                                  <span className="text-stone-400 dark:text-zinc-500 italic">Permanente</span>
+                                )}
+                              </td>
+
+                              {/* Último Uso */}
+                              <td className="py-3.5 px-3 text-stone-600 dark:text-zinc-300 whitespace-nowrap text-[11px]">
+                                {reader.lastUsedAt ? (
+                                  formatDate(reader.lastUsedAt)
+                                ) : (
+                                  <span className="text-stone-400 dark:text-zinc-500 italic">Ainda não acessou</span>
+                                )}
+                              </td>
+
+                              {/* Botões de Ação */}
+                              <td className="py-3.5 px-3 text-right whitespace-nowrap">
+                                <div className="inline-flex items-center gap-1">
+                                  {/* Botão Bloquear / Desbloquear */}
+                                  {reader.status === 'active' ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleUpdateReaderStatus(reader, 'blocked')}
+                                      className="p-1.5 rounded-lg text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/40 transition-colors cursor-pointer"
+                                      title="Bloquear temporariamente este leitor"
+                                    >
+                                      <Lock className="w-4 h-4" />
+                                    </button>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleUpdateReaderStatus(reader, 'active')}
+                                      className="p-1.5 rounded-lg text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 transition-colors cursor-pointer"
+                                      title="Reativar acesso do leitor"
+                                    >
+                                      <Unlock className="w-4 h-4" />
+                                    </button>
+                                  )}
+
+                                  {/* Botão Revogar */}
+                                  {reader.status !== 'revoked' && (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleUpdateReaderStatus(reader, 'revoked')}
+                                      className="p-1.5 rounded-lg text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors cursor-pointer"
+                                      title="Revogar definitivamente este PIN"
+                                    >
+                                      <UserX className="w-4 h-4" />
+                                    </button>
+                                  )}
+
+                                  {/* Botão Excluir */}
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDeleteReader(reader)}
+                                    className="p-1.5 rounded-lg text-stone-400 hover:text-rose-600 hover:bg-black/5 dark:hover:bg-zinc-800 transition-colors cursor-pointer"
+                                    title="Excluir registro permanentemente"
+                                  >
+                                    <Trash2 className="w-4 h-4" />
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </section>
+        )}
+
         {/* =========================================================================
             ABA 1: FUNCIONALIDADES DA BIBLIOTECA
             ========================================================================= */}
@@ -1665,6 +2342,93 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
           </section>
         )}
       </main>
+
+      {/* MODAL DE EXIBIÇÃO ÚNICA E SEGURA DO PIN CRIADO */}
+      {createdPinModal.isOpen && (
+        <div
+          className="fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-200"
+          role="dialog"
+          aria-modal="true"
+        >
+          <div
+            className={`max-w-md w-full p-6 sm:p-7 rounded-3xl border shadow-2xl relative animate-in zoom-in-95 duration-150 ${
+              isDark ? 'bg-zinc-900 border-zinc-700 text-zinc-100' : 'bg-white border-stone-200 text-stone-900'
+            }`}
+          >
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-12 h-12 rounded-2xl bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
+                <KeyRound className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="text-lg font-serif font-bold text-stone-900 dark:text-zinc-50">
+                  PIN Gerado com Sucesso!
+                </h3>
+                <p className="text-xs text-stone-500 dark:text-zinc-400 font-sans">
+                  Leitor: <strong className="font-semibold text-stone-800 dark:text-zinc-200">{createdPinModal.readerName}</strong>
+                </p>
+              </div>
+            </div>
+
+            <div className="p-4 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900/50 mb-4 text-center">
+              <span className="text-[11px] font-semibold uppercase tracking-wider text-amber-800 dark:text-amber-300 block mb-1">
+                Código PIN do Leitor
+              </span>
+              <div className="text-3xl sm:text-4xl font-mono font-bold tracking-widest text-stone-900 dark:text-zinc-100 py-1 select-all">
+                {createdPinModal.pin}
+              </div>
+            </div>
+
+            <div className="p-3 rounded-xl bg-stone-100 dark:bg-zinc-800/80 text-stone-600 dark:text-zinc-300 text-xs flex items-start gap-2.5 mb-6">
+              <ShieldCheck className="w-4 h-4 text-emerald-500 shrink-0 mt-0.5" />
+              <p className="leading-relaxed">
+                <strong>Atenção de Segurança:</strong> Este PIN é exibido <strong>apenas uma vez</strong>.
+                Copie ou anote o código agora para entregar ao leitor. No servidor, ele será guardado
+                exclusivamente como hash criptográfico irreversível.
+              </p>
+            </div>
+
+            <div className="flex flex-col sm:flex-row items-center justify-end gap-2.5 pt-2 border-t border-stone-100 dark:border-zinc-800">
+              <button
+                type="button"
+                onClick={() => {
+                  navigator.clipboard.writeText(createdPinModal.pin);
+                  setCreatedPinModal((prev) => ({ ...prev, copied: true }));
+                  setTimeout(() => {
+                    setCreatedPinModal((prev) => ({ ...prev, copied: false }));
+                  }, 2500);
+                }}
+                className={`w-full sm:w-auto px-4 py-2.5 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors cursor-pointer ${
+                  createdPinModal.copied
+                    ? 'bg-emerald-600 text-white'
+                    : isDark
+                    ? 'bg-zinc-800 hover:bg-zinc-700 text-zinc-100'
+                    : 'bg-stone-100 hover:bg-stone-200 text-stone-800'
+                }`}
+              >
+                {createdPinModal.copied ? (
+                  <>
+                    <Check className="w-3.5 h-3.5" />
+                    <span>PIN Copiado!</span>
+                  </>
+                ) : (
+                  <>
+                    <Copy className="w-3.5 h-3.5" />
+                    <span>Copiar PIN</span>
+                  </>
+                )}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setCreatedPinModal((prev) => ({ ...prev, isOpen: false }))}
+                className="w-full sm:w-auto px-5 py-2.5 rounded-xl text-xs font-semibold bg-stone-900 hover:bg-stone-800 dark:bg-amber-500 dark:hover:bg-amber-400 text-white dark:text-zinc-950 transition-colors cursor-pointer"
+              >
+                Entendido, já guardei o PIN
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* MODAL DE CONFIRMAÇÃO DE AÇÃO CRÍTICA */}
       {confirmModal.isOpen && (

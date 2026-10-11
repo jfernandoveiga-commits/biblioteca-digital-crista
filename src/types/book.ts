@@ -93,6 +93,34 @@ export interface ContentAvailabilityConfig {
 }
 
 /**
+ * Gestão de Acessos e PINs dos Leitores
+ */
+export type ReaderAccessStatus = 'active' | 'blocked' | 'revoked';
+
+export interface ReaderAccessRecord {
+  id: string;
+  name: string; // Identificação do usuário / leitor
+  status: ReaderAccessStatus;
+  createdAt: string;
+  expiresAt: string | null; // Data de expiração opcional
+  lastUsedAt: string | null;
+  notes?: string;
+}
+
+export interface ReaderAccessCreateInput {
+  name: string;
+  pinMode: 'auto' | 'manual';
+  customPin?: string;
+  expiresAt?: string | null;
+  notes?: string;
+}
+
+export interface ReaderAccessCreatedResult {
+  access: ReaderAccessRecord;
+  pin: string; // Exibido uma única vez ao administrador
+}
+
+/**
  * Marcadores de leitura do leitor
  */
 export interface Bookmark {

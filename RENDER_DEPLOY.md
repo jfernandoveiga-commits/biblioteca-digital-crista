@@ -8,13 +8,15 @@ Este documento explica como configurar e gerenciar o controle de acesso por PIN 
 
 - **Acesso Independente e Restrito:** O administrador possui login próprio com Usuário e Senha, completamente independente do PIN dos leitores. Não há cadastro público.
 - **Painel de Gestão Completo:**
-  - **Alteração do PIN dos Leitores:** Permite definir um novo PIN compartilhado a qualquer momento, com confirmação obrigatória e sem jamais exibir o PIN em texto aberto.
+  - **Acessos dos Leitores:** Permite gerar PINs individuais de 6 dígitos de forma criptograficamente aleatória ou criar códigos manuais personalizados, definir validades ou prazos de expiração (7, 30, 90 dias ou data personalizada), monitorar o último uso, e bloquear, reativar ou revogar acessos individualmente.
+  - **Exibição Segura do PIN Único:** O PIN gerado ou definido manualmente é apresentado uma única vez no painel para ser entregue ao leitor, sendo armazenado no servidor exclusivamente como hash criptográfico PBKDF2 com salt aleatório.
+  - **Alteração do PIN Geral:** Permite atualizar o PIN de contingência a qualquer momento.
   - **Bloqueio Temporário:** Permite pausar todos os novos acessos à biblioteca em caso de manutenção ou atualização de capítulos, e liberar quando desejar.
   - **Revogação Geral de Sessões:** Desconecta todos os leitores ativos imediatamente, exigindo que digitem o PIN novamente para continuar.
-  - **Métricas Anônimas:** Exibe o número de sessões ativas no momento e as datas das últimas alterações.
+  - **Métricas Anônimas:** Exibe o número de leitores cadastrados, sessões ativas no momento e as datas das últimas alterações.
 - **Validação 100% no Servidor:** Todas as rotas administrativas (`/api/admin/*`) validam autorização no servidor com tokens criptográficos e cookies `HttpOnly`, `SameSite` e `Secure`.
-- **Proteção Rígida contra Força Bruta:** Máximo de 5 tentativas de login por IP com bloqueio de 5 minutos.
-- **Persistência Segura em Disco:** As alterações de PIN e estado de bloqueio são salvas de forma atômica no arquivo `data/security-config.json` no servidor.
+- **Proteção Rígida contra Força Bruta:** Máximo de 5 tentativas de login por IP com bloqueio de 5 minutos para admin e bloqueio progressivo para o PIN do leitor.
+- **Persistência Segura em Disco:** As alterações de PIN, leitores e estado de bloqueio são salvas de forma atômica no arquivo `data/security-config.json` no servidor.
 
 ---
 
