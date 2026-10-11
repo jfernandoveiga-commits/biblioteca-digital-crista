@@ -1,0 +1,16 @@
+{
+  "name": "Bíblia Livre",
+  "shortName": "BLIVRE",
+  "version": "2018.2.0 (Fevereiro de 2018)",
+  "textualVariant": "Textus Receptus (TR) para o Novo Testamento e Texto Massorético para o Antigo Testamento",
+  "authors": "Diego Santos, Mario Sérgio e Marco Teles",
+  "sourceUrl": "https://github.com/blivre/BibliaLivre",
+  "websiteUrl": "https://sites.google.com/site/biblialivre/",
+  "license": {
+    "name": "Creative Commons Atribuição 3.0 Brasil (CC BY 3.0 BR)",
+    "url": "https://creativecommons.org/licenses/by/3.0/br/",
+    "notice": "Todas as Escrituras em português citadas são da Bíblia Livre (BLIVRE), Copyright © Diego Santos, Mario Sérgio, e Marco Teles, https://github.com/blivre/BibliaLivre - fevereiro de 2018. Licença Creative Commons Atribuição 3.0 Brasil (https://creativecommons.org/licenses/by/3.0/br/). Reprodução permitida desde que devidamente mencionados fonte e autores."
+  },
+  "totalBooks": 66,
+  "totalVerses": 31102
+}

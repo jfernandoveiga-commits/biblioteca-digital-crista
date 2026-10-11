@@ -1,0 +1,430 @@
+/**
+ * Serviço de Autenticação e Gestão Administrativa da Biblioteca Digital.
+ *
+ * Comunica-se exclusivamente com a API do servidor (/api/admin/*)
+ * utilizando credenciais seguras e tokens criptografados.
+ */
+
+import { LibraryFeaturesConfig, ContentAvailabilityConfig } from '../types/book';
+
+const ADMIN_TOKEN_KEY = 'bib_admin_session_token';
+
+export interface AdminSessionStatus {
+  authenticated: boolean;
+  username?: string;
+  expiresAt?: number;
+}
+
+export interface AdminLoginResult {
+  success: boolean;
+  error?: string;
+  remainingAttempts?: number;
+  retryAfter?: number;
+  username?: string;
+}
+
+export interface AdminSystemStatus {
+  success: boolean;
+  isLibraryLocked: boolean;
+  lockReason: string;
+  activeReaderSessionsCount: number;
+  lastPinChangedAt: string | null;
+  lastRevokedAt: string | null;
+  adminUsername: string;
+  storageType: string;
+  features?: LibraryFeaturesConfig;
+  contentAvailability?: ContentAvailabilityConfig;
+  error?: string;
+}
+
+export const adminAuthService = {
+  getToken(): string | null {
+    try {
+      return localStorage.getItem(ADMIN_TOKEN_KEY);
+    } catch {
+      return null;
+    }
+  },
+
+  setToken(token: string): void {
+    try {
+      localStorage.setItem(ADMIN_TOKEN_KEY, token);
+    } catch {
+      // Ignora erro de storage local
+    }
+  },
+
+  clearToken(): void {
+    try {
+      localStorage.removeItem(ADMIN_TOKEN_KEY);
+    } catch {
+      // Ignora erro
+    }
+  },
+
+  getAuthHeaders(): Record<string, string> {
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+    };
+    const token = this.getToken();
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    return headers;
+  },
+
+  async checkSession(): Promise<AdminSessionStatus> {
+    const token = this.getToken();
+    try {
+      const headers: Record<string, string> = {};
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
+      const response = await fetch('/api/admin/session', {
+        method: 'GET',
+        headers,
+        credentials: 'include',
+      });
+
+      if (!response.ok) {
+        return { authenticated: false };
+      }
+
+      const data = await response.json();
+      if (!data.authenticated) {
+        this.clearToken();
+      }
+      return data;
+    } catch (err) {
+      console.warn('[adminAuthService] Falha ao verificar sessão administrativa:', err);
+      return { authenticated: false };
+    }
+  },
+
+  async login(username: string, password: string): Promise<AdminLoginResult> {
+    try {
+      const response = await fetch('/api/admin/login', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ username, password }),
+        credentials: 'include',
+      });
+
+      const data = await response.json();
+
+      if (response.ok && data.success && data.token) {
+        this.setToken(data.token);
+        return {
+          success: true,
+          username: data.username,
+        };
+      }
+
+      return {
+        success: false,
+        error: data.error || 'Credenciais inválidas. Verifique seu usuário e senha.',
+        remainingAttempts: data.remainingAttempts,
+        retryAfter: data.retryAfter,
+      };
+    } catch (err) {
+      console.error('[adminAuthService] Erro de rede ao efetuar login administrativo:', err);
+      return {
+        success: false,
+        error: 'Erro de conexão com o servidor. Verifique sua rede e tente novamente.',
+      };
+    }
+  },
+
+  async logout(): Promise<void> {
+    try {
+      await fetch('/api/admin/logout', {
+        method: 'POST',
+        headers: this.getAuthHeaders(),
+        credentials: 'include',
+      });
+    } catch {
+      // Ignora erro de rede no logout
+    } finally {
+      this.clearToken();
+    }
+  },
+
+  async getStatus(): Promise<AdminSystemStatus> {
+    try {
+      const response = await fetch('/api/admin/status', {
+        method: 'GET',
+        headers: this.getAuthHeaders(),
+        credentials: 'include',
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        return {
+          success: false,
+          isLibraryLocked: false,
+          lockReason: '',
+          activeReaderSessionsCount: 0,
+          lastPinChangedAt: null,
+          lastRevokedAt: null,
+          adminUsername: '',
+          storageType: '',
+          error: errorData.error || 'Não autorizado a consultar status do sistema.',
+        };
+      }
+
+      return await response.json();
+    } catch (err) {
+      console.error('[adminAuthService] Erro ao obter status:', err);
+      return {
+        success: false,
+        isLibraryLocked: false,
+        lockReason: '',
+        activeReaderSessionsCount: 0,
+        lastPinChangedAt: null,
+        lastRevokedAt: null,
+        adminUsername: '',
+        storageType: '',
+        error: 'Erro de conexão com o servidor.',
+      };
+    }
+  },
+
+  async updatePin(
+    newPin: string,
+    confirmPin: string,
+    revokeExistingSessions: boolean = true
+  ): Promise<{ success: boolean; message?: string; error?: string }> {
+    try {
+      const response = await fetch('/api/admin/update-pin', {
+        method: 'POST',
+        headers: this.getAuthHeaders(),
+        body: JSON.stringify({
+          newPin,
+          confirmPin,
+          revokeExistingSessions,
+        }),
+        credentials: 'include',
+      });
+
+      const data = await response.json();
+      if (!response.ok || !data.success) {
+        return {
+          success: false,
+          error: data.error || 'Falha ao atualizar PIN de acesso.',
+        };
+      }
+
+      return {
+        success: true,
+        message: data.message,
+      };
+    } catch (err) {
+      console.error('[adminAuthService] Erro ao atualizar PIN:', err);
+      return {
+        success: false,
+        error: 'Erro de conexão ao salvar novo PIN.',
+      };
+    }
+  },
+
+  async toggleLock(
+    locked: boolean,
+    reason?: string
+  ): Promise<{ success: boolean; isLibraryLocked?: boolean; message?: string; error?: string }> {
+    try {
+      const response = await fetch('/api/admin/toggle-lock', {
+        method: 'POST',
+        headers: this.getAuthHeaders(),
+        body: JSON.stringify({ locked, reason }),
+        credentials: 'include',
+      });
+
+      const data = await response.json();
+      if (!response.ok || !data.success) {
+        return {
+          success: false,
+          error: data.error || 'Falha ao alterar estado de bloqueio.',
+        };
+      }
+
+      return {
+        success: true,
+        isLibraryLocked: data.isLibraryLocked,
+        message: data.message,
+      };
+    } catch (err) {
+      console.error('[adminAuthService] Erro ao alterar bloqueio:', err);
+      return {
+        success: false,
+        error: 'Erro de conexão ao alterar estado de bloqueio.',
+      };
+    }
+  },
+
+  async revokeAllSessions(): Promise<{ success: boolean; count?: number; message?: string; error?: string }> {
+    try {
+      const response = await fetch('/api/admin/revoke-sessions', {
+        method: 'POST',
+        headers: this.getAuthHeaders(),
+        credentials: 'include',
+      });
+
+      const data = await response.json();
+      if (!response.ok || !data.success) {
+        return {
+          success: false,
+          error: data.error || 'Falha ao revogar sessões.',
+        };
+      }
+
+      return {
+        success: true,
+        count: data.count,
+        message: data.message,
+      };
+    } catch (err) {
+      console.error('[adminAuthService] Erro ao revogar sessões:', err);
+      return {
+        success: false,
+        error: 'Erro de conexão ao revogar sessões.',
+      };
+    }
+  },
+
+  async getFeatures(): Promise<{ success: boolean; features?: LibraryFeaturesConfig; error?: string }> {
+    try {
+      const response = await fetch('/api/admin/features', {
+        method: 'GET',
+        headers: this.getAuthHeaders(),
+        credentials: 'include',
+      });
+
+      const data = await response.json();
+      if (!response.ok || !data.success) {
+        return {
+          success: false,
+          error: data.error || 'Falha ao consultar configurações de funcionalidades.',
+        };
+      }
+
+      return {
+        success: true,
+        features: data.features,
+      };
+    } catch (err) {
+      console.error('[adminAuthService] Erro ao buscar funcionalidades:', err);
+      return {
+        success: false,
+        error: 'Erro de conexão com o servidor ao consultar funcionalidades.',
+      };
+    }
+  },
+
+  async updateFeatures(
+    features: Partial<LibraryFeaturesConfig>
+  ): Promise<{ success: boolean; features?: LibraryFeaturesConfig; message?: string; error?: string }> {
+    try {
+      const response = await fetch('/api/admin/features', {
+        method: 'POST',
+        headers: this.getAuthHeaders(),
+        body: JSON.stringify({ features }),
+        credentials: 'include',
+      });
+
+      const data = await response.json();
+      if (!response.ok || !data.success) {
+        return {
+          success: false,
+          error: data.error || 'Falha ao atualizar funcionalidades da biblioteca.',
+        };
+      }
+
+      return {
+        success: true,
+        features: data.features,
+        message: data.message,
+      };
+    } catch (err) {
+      console.error('[adminAuthService] Erro ao atualizar funcionalidades:', err);
+      return {
+        success: false,
+        error: 'Erro de conexão ao salvar alterações de funcionalidades.',
+      };
+    }
+  },
+
+  async getContentAvailability(): Promise<{
+    success: boolean;
+    contentAvailability?: ContentAvailabilityConfig;
+    error?: string;
+  }> {
+    try {
+      const response = await fetch('/api/admin/content-availability', {
+        method: 'GET',
+        headers: this.getAuthHeaders(),
+        credentials: 'include',
+      });
+
+      const data = await response.json();
+      if (!response.ok || !data.success) {
+        return {
+          success: false,
+          error: data.error || 'Falha ao consultar disponibilidade de conteúdo.',
+        };
+      }
+
+      return {
+        success: true,
+        contentAvailability: data.contentAvailability,
+      };
+    } catch (err) {
+      console.error('[adminAuthService] Erro ao buscar disponibilidade:', err);
+      return {
+        success: false,
+        error: 'Erro de conexão ao consultar disponibilidade de livros e capítulos.',
+      };
+    }
+  },
+
+  async updateContentAvailability(
+    contentAvailability: ContentAvailabilityConfig
+  ): Promise<{
+    success: boolean;
+    contentAvailability?: ContentAvailabilityConfig;
+    message?: string;
+    error?: string;
+  }> {
+    try {
+      const response = await fetch('/api/admin/content-availability', {
+        method: 'POST',
+        headers: this.getAuthHeaders(),
+        body: JSON.stringify({ contentAvailability }),
+        credentials: 'include',
+      });
+
+      const data = await response.json();
+      if (!response.ok || !data.success) {
+        return {
+          success: false,
+          error: data.error || 'Falha ao atualizar disponibilidade de conteúdo.',
+        };
+      }
+
+      return {
+        success: true,
+        contentAvailability: data.contentAvailability,
+        message: data.message,
+      };
+    } catch (err) {
+      console.error('[adminAuthService] Erro ao atualizar disponibilidade:', err);
+      return {
+        success: false,
+        error: 'Erro de conexão ao salvar disponibilidade de livros e capítulos.',
+      };
+    }
+  },
+};
+

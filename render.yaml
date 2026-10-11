@@ -1,0 +1,18 @@
+services:
+  - type: web
+    name: biblioteca-digital
+    runtime: node
+    plan: free
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: ADMIN_USERNAME
+        value: admin
+      - key: ADMIN_PASSWORD
+        generateValue: true # Render gera senha aleatória segura automaticamente
+      - key: ACCESS_PIN
+        generateValue: false # Defina o PIN desejado no painel do Render (ex: 2025 ou 7391)
+      - key: SESSION_SECRET
+        generateValue: true

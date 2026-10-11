@@ -1,0 +1,35 @@
+{
+  "id": "/",
+  "name": "Biblioteca Digital",
+  "short_name": "Biblioteca",
+  "description": "Aplicativo elegante e sóbrio para leitura confortável de livros digitais e consulta bíblica.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#18181B",
+  "theme_color": "#18181B",
+  "categories": ["books", "education", "lifestyle"],
+  "lang": "pt-BR",
+  "dir": "ltr",
+  "icons": [
+    {
+      "src": "/pwa-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/pwa-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/pwa-maskable-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}

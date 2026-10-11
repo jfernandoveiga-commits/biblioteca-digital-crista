@@ -1,0 +1,109 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <!-- Background Gradient: Deep luxury navy & midnight slate -->
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1c1917" />
+      <stop offset="50%" stop-color="#141211" />
+      <stop offset="100%" stop-color="#0c0a09" />
+    </linearGradient>
+
+    <!-- Warm Amber Gold Foil Gradient -->
+    <linearGradient id="goldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FDE68A" />
+      <stop offset="30%" stop-color="#F59E0B" />
+      <stop offset="70%" stop-color="#D97706" />
+      <stop offset="100%" stop-color="#B45309" />
+    </linearGradient>
+
+    <!-- Soft Inner Glow / Vignette -->
+    <radialGradient id="haloGlow" cx="50%" cy="48%" r="45%">
+      <stop offset="0%" stop-color="#F59E0B" stop-opacity="0.18" />
+      <stop offset="60%" stop-color="#D97706" stop-opacity="0.04" />
+      <stop offset="100%" stop-color="#000000" stop-opacity="0" />
+    </radialGradient>
+
+    <!-- Book Page Cream Gradient -->
+    <linearGradient id="pageGradLeft" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#E7DFD1" />
+      <stop offset="85%" stop-color="#F9F6F0" />
+      <stop offset="100%" stop-color="#DCD4C4" />
+    </linearGradient>
+    <linearGradient id="pageGradRight" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#DCD4C4" />
+      <stop offset="15%" stop-color="#F9F6F0" />
+      <stop offset="100%" stop-color="#E7DFD1" />
+    </linearGradient>
+  </defs>
+
+  <!-- Full Bleed Background Canvas -->
+  <rect width="512" height="512" rx="112" fill="url(#bgGrad)" />
+
+  <!-- Subtle Ambient Glow -->
+  <circle cx="256" cy="246" r="210" fill="url(#haloGlow)" />
+
+  <!-- Elegant Circular Border Frame (Inner Safe Zone) -->
+  <circle cx="256" cy="256" r="226" fill="none" stroke="url(#goldGrad)" stroke-width="3" stroke-opacity="0.35" stroke-dasharray="8 6" />
+
+  <!-- BOOK ICON & BIBLICAL LIGHT SYMBOLISM (Centered in Safe Zone: 80-432) -->
+  <g transform="translate(0, 8)">
+    <!-- Book Shadow -->
+    <ellipse cx="256" cy="365" rx="145" ry="18" fill="#000000" opacity="0.45" />
+
+    <!-- Left Book Page -->
+    <path d="M 256 332 C 220 318 160 318 120 330 C 114 332 110 327 110 321 L 110 196 C 110 190 114 186 120 184 C 160 172 220 172 256 186 Z"
+          fill="url(#pageGradLeft)" stroke="#382E25" stroke-width="2.5" />
+
+    <!-- Right Book Page -->
+    <path d="M 256 332 C 292 318 352 318 392 330 C 398 332 402 327 402 321 L 402 196 C 402 190 398 186 392 184 C 352 172 292 172 256 186 Z"
+          fill="url(#pageGradRight)" stroke="#382E25" stroke-width="2.5" />
+
+    <!-- Book Spine / Central Binding Crease -->
+    <line x1="256" y1="184" x2="256" y2="334" stroke="#8B6B47" stroke-width="3.5" stroke-linecap="round" />
+
+    <!-- Text Lines on Left Page (Subtle Engraved Style) -->
+    <line x1="145" y1="214" x2="225" y2="214" stroke="#786B5E" stroke-width="2.5" stroke-linecap="round" opacity="0.6" />
+    <line x1="145" y1="236" x2="228" y2="236" stroke="#786B5E" stroke-width="2.5" stroke-linecap="round" opacity="0.6" />
+    <line x1="145" y1="258" x2="218" y2="258" stroke="#786B5E" stroke-width="2.5" stroke-linecap="round" opacity="0.6" />
+    <line x1="145" y1="280" x2="200" y2="280" stroke="#786B5E" stroke-width="2.5" stroke-linecap="round" opacity="0.5" />
+
+    <!-- Text Lines on Right Page -->
+    <line x1="284" y1="214" x2="367" y2="214" stroke="#786B5E" stroke-width="2.5" stroke-linecap="round" opacity="0.6" />
+    <line x1="284" y1="236" x2="367" y2="236" stroke="#786B5E" stroke-width="2.5" stroke-linecap="round" opacity="0.6" />
+    <line x1="284" y1="258" x2="355" y2="258" stroke="#786B5E" stroke-width="2.5" stroke-linecap="round" opacity="0.6" />
+    <line x1="284" y1="280" x2="335" y2="280" stroke="#786B5E" stroke-width="2.5" stroke-linecap="round" opacity="0.5" />
+
+    <!-- Elegant Radiant Golden Cross / Star above the book -->
+    <!-- Vertical Cross Beam -->
+    <path d="M 252 108 C 252 106 260 106 260 108 L 260 170 C 260 172 252 172 252 170 Z"
+          fill="url(#goldGrad)" />
+    <!-- Horizontal Cross Beam -->
+    <path d="M 235 124 C 235 120 277 120 277 124 L 277 132 C 277 136 235 136 235 132 Z"
+          fill="url(#goldGrad)" />
+
+    <!-- Radiant Star Point / Beacon -->
+    <circle cx="256" cy="128" r="5" fill="#FFFBEB" />
+    <polygon points="256,104 259,124 278,128 259,132 256,152 253,132 234,128 253,124" fill="url(#goldGrad)" opacity="0.9" />
+
+    <!-- Subtle Golden Sparkles / Wisdom Light -->
+    <circle cx="195" cy="140" r="2.5" fill="#FDE68A" opacity="0.8" />
+    <circle cx="317" cy="140" r="2.5" fill="#FDE68A" opacity="0.8" />
+    <circle cx="165" cy="165" r="2" fill="#F59E0B" opacity="0.7" />
+    <circle cx="347" cy="165" r="2" fill="#F59E0B" opacity="0.7" />
+  </g>
+
+  <!-- Title Monogram / Label at Base -->
+  <text x="256" y="420"
+        text-anchor="middle"
+        font-family="system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif"
+        font-size="24"
+        font-weight="700"
+        letter-spacing="5"
+        fill="url(#goldGrad)">BIBLIOTECA</text>
+  <text x="256" y="445"
+        text-anchor="middle"
+        font-family="system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif"
+        font-size="13"
+        font-weight="600"
+        letter-spacing="6"
+        fill="#A8A29E">DIGITAL</text>
+</svg>

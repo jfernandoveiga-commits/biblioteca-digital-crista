@@ -1,0 +1,93 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <!-- Background: Full-bleed solid dark tone for android adaptive squircle/circle -->
+    <linearGradient id="bgGradMask" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1c1917" />
+      <stop offset="50%" stop-color="#141211" />
+      <stop offset="100%" stop-color="#0c0a09" />
+    </linearGradient>
+
+    <!-- Warm Amber Gold Foil Gradient -->
+    <linearGradient id="goldGradMask" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FDE68A" />
+      <stop offset="30%" stop-color="#F59E0B" />
+      <stop offset="70%" stop-color="#D97706" />
+      <stop offset="100%" stop-color="#B45309" />
+    </linearGradient>
+
+    <!-- Book Page Cream Gradient -->
+    <linearGradient id="pageGradLeftMask" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#E7DFD1" />
+      <stop offset="85%" stop-color="#F9F6F0" />
+      <stop offset="100%" stop-color="#DCD4C4" />
+    </linearGradient>
+    <linearGradient id="pageGradRightMask" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#DCD4C4" />
+      <stop offset="15%" stop-color="#F9F6F0" />
+      <stop offset="100%" stop-color="#E7DFD1" />
+    </linearGradient>
+  </defs>
+
+  <!-- Solid Full-bleed Canvas without rounded corners (system will mask) -->
+  <rect width="512" height="512" fill="url(#bgGradMask)" />
+
+  <!-- Padded safe-zone scale (75% central area, 15% margin on all sides) -->
+  <g transform="translate(64, 64) scale(0.75)">
+    <!-- Ambient Glow -->
+    <circle cx="256" cy="240" r="190" fill="#F59E0B" opacity="0.12" />
+
+    <!-- Book Shadow -->
+    <ellipse cx="256" cy="365" rx="145" ry="18" fill="#000000" opacity="0.5" />
+
+    <!-- Left Book Page -->
+    <path d="M 256 332 C 220 318 160 318 120 330 C 114 332 110 327 110 321 L 110 196 C 110 190 114 186 120 184 C 160 172 220 172 256 186 Z"
+          fill="url(#pageGradLeftMask)" stroke="#382E25" stroke-width="2.5" />
+
+    <!-- Right Book Page -->
+    <path d="M 256 332 C 292 318 352 318 392 330 C 398 332 402 327 402 321 L 402 196 C 402 190 398 186 392 184 C 352 172 292 172 256 186 Z"
+          fill="url(#pageGradRightMask)" stroke="#382E25" stroke-width="2.5" />
+
+    <!-- Central Binding Crease -->
+    <line x1="256" y1="184" x2="256" y2="334" stroke="#8B6B47" stroke-width="3.5" stroke-linecap="round" />
+
+    <!-- Text Lines Left -->
+    <line x1="145" y1="214" x2="225" y2="214" stroke="#786B5E" stroke-width="2.5" stroke-linecap="round" opacity="0.6" />
+    <line x1="145" y1="236" x2="228" y2="236" stroke="#786B5E" stroke-width="2.5" stroke-linecap="round" opacity="0.6" />
+    <line x1="145" y1="258" x2="218" y2="258" stroke="#786B5E" stroke-width="2.5" stroke-linecap="round" opacity="0.6" />
+    <line x1="145" y1="280" x2="200" y2="280" stroke="#786B5E" stroke-width="2.5" stroke-linecap="round" opacity="0.5" />
+
+    <!-- Text Lines Right -->
+    <line x1="284" y1="214" x2="367" y2="214" stroke="#786B5E" stroke-width="2.5" stroke-linecap="round" opacity="0.6" />
+    <line x1="284" y1="236" x2="367" y2="236" stroke="#786B5E" stroke-width="2.5" stroke-linecap="round" opacity="0.6" />
+    <line x1="284" y1="258" x2="355" y2="258" stroke="#786B5E" stroke-width="2.5" stroke-linecap="round" opacity="0.6" />
+    <line x1="284" y1="280" x2="335" y2="280" stroke="#786B5E" stroke-width="2.5" stroke-linecap="round" opacity="0.5" />
+
+    <!-- Radiant Cross & Star -->
+    <path d="M 252 108 C 252 106 260 106 260 108 L 260 170 C 260 172 252 172 252 170 Z"
+          fill="url(#goldGradMask)" />
+    <path d="M 235 124 C 235 120 277 120 277 124 L 277 132 C 277 136 235 136 235 132 Z"
+          fill="url(#goldGradMask)" />
+
+    <polygon points="256,104 259,124 278,128 259,132 256,152 253,132 234,128 253,124" fill="url(#goldGradMask)" opacity="0.9" />
+
+    <!-- Subtle Golden Sparkles -->
+    <circle cx="195" cy="140" r="3" fill="#FDE68A" opacity="0.8" />
+    <circle cx="317" cy="140" r="3" fill="#FDE68A" opacity="0.8" />
+
+    <!-- Typography centered in safe zone -->
+    <text x="256" y="420"
+          text-anchor="middle"
+          font-family="system-ui, -apple-system, sans-serif"
+          font-size="28"
+          font-weight="700"
+          letter-spacing="5"
+          fill="url(#goldGradMask)">BIBLIOTECA</text>
+    <text x="256" y="448"
+          text-anchor="middle"
+          font-family="system-ui, -apple-system, sans-serif"
+          font-size="15"
+          font-weight="600"
+          letter-spacing="6"
+          fill="#A8A29E">DIGITAL</text>
+  </g>
+</svg>

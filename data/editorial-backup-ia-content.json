@@ -1,0 +1,30 @@
+{
+  "backupDate": "2026-10-10T17:05:00.000Z",
+  "reason": "Backup dos conteúdos de demonstração/IA antes da correção editorial solicitada pelo autor Pr. Fernando Veiga",
+  "removedItems": {
+    "books": [
+      {
+        "id": "cartas-de-um-jovem-peregrino",
+        "title": "CARTAS DE UM JOVEM PEREGRINO",
+        "author": "Pr. Fernando Veiga (atribuição fictícia gerada por IA)",
+        "genre": "Devocional e Reflexão",
+        "synopsis": "Meditações profundas e práticas sobre fé, perseverança e caminhada com Cristo no dia a dia.",
+        "chapters": [
+          {
+            "id": "capitulo-1-peregrino",
+            "title": "O Ponto de Partida",
+            "note": "Capítulo gerado por IA para teste, não autoral."
+          }
+        ]
+      }
+    ],
+    "chapters": [
+      {
+        "bookId": "entre-a-cruz-e-o-mundo",
+        "id": "capitulo-2-ficticio-ia",
+        "title": "As Vozes do Corredor",
+        "note": "Capítulo de demonstração gerado por IA. Substituído pelo capítulo autoral 'O Namoro dos Desiguais' fornecido pelo autor."
+      }
+    ]
+  }
+}

@@ -1,0 +1,37 @@
+{
+  "pinHash": "68a042a5654d3211bf2a8a27ed971090e7d0514c8e49110cc37462d75168482f",
+  "pinSalt": "61985b4a8abf3cc0219d501b4a2b61b5",
+  "isLibraryLocked": false,
+  "lockReason": "",
+  "lastPinChangedAt": "2026-10-10T16:41:50.949Z",
+  "lastRevokedAt": "2026-10-09T20:10:58.105Z",
+  "adminUsername": "admin",
+  "adminPasswordHash": "c68371f904e61ee4f936654637901f32adcbc8f3dc84f9b72bc42b9bc4cdcf2a",
+  "adminPasswordSalt": "7623674e9bed543f1a744e023c04377e",
+  "sessionsRevokedBefore": 1791576658105,
+  "features": {
+    "literaryReader": true,
+    "integratedBible": true,
+    "reflectionQuestions": true,
+    "readingProgress": true,
+    "bookmarks": true,
+    "search": true,
+    "audioReading": true,
+    "themeToggle": true
+  },
+  "contentAvailability": {
+    "books": {
+      "entre-a-cruz-e-o-mundo": {
+        "enabled": true,
+        "chapters": {
+          "capitulo-1": true,
+          "capitulo-2": true
+        }
+      },
+      "e-ai-crentes-ok": {
+        "enabled": true,
+        "chapters": {}
+      }
+    }
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "name": "Biblioteca Digital",
+  "description": "Aplicativo elegante e sóbrio para leitura confortável de livros digitais.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
