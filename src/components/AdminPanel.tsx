@@ -623,7 +623,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
               </h1>
 
               <p className="text-xs sm:text-sm text-stone-500 dark:text-zinc-400 max-w-xs font-serif leading-relaxed">
-                Gestão e controles soberanos da Biblioteca Digital.
+                Gestão e controles soberanos da Biblioteca Digital Cristã.
               </p>
             </div>
 
@@ -1595,10 +1595,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                     Nome Oficial
                   </span>
                   <span className="text-sm font-bold text-stone-900 dark:text-zinc-100 mt-1 block">
-                    Biblioteca Digital
+                    Biblioteca Digital Cristã
                   </span>
                   <span className="text-[11px] text-stone-400 dark:text-zinc-500 mt-0.5 block">
-                    Nome curto: "Biblioteca" (≤ 12 carac.)
+                    Nome curto: "Bib. Cristã" (≤ 12 carac.)
                   </span>
                 </div>
 

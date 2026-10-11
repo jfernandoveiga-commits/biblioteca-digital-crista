@@ -470,7 +470,7 @@ export default function App() {
                 </div>
                 <div>
                   <h2 id="library-modal-title" className="text-lg font-serif font-bold text-stone-900 dark:text-zinc-50">
-                    Biblioteca Digital
+                    Biblioteca Digital Cristã
                   </h2>
                   <p className="text-xs text-stone-500 dark:text-zinc-400 font-serif">
                     Catálogo de obras e seleção de capítulos

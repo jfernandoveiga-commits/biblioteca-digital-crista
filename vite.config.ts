@@ -22,8 +22,8 @@ export default defineConfig(() => {
         ],
         manifest: {
           id: '/',
-          name: 'Biblioteca Digital',
-          short_name: 'Biblioteca',
+          name: 'Biblioteca Digital Cristã',
+          short_name: 'Bib. Cristã',
           description:
             'Aplicativo elegante e sóbrio para leitura confortável de livros digitais e consulta bíblica.',
           theme_color: '#18181B',
@@ -109,7 +109,7 @@ export default defineConfig(() => {
     ],
     resolve: {
       alias: {
-        '@': path.resolve(__dirname, '.'),
+        '@': path.resolve('.'),
       },
     },
     server: {

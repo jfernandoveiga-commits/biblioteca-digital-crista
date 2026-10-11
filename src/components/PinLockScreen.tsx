@@ -115,14 +115,14 @@ export const PinLockScreen: React.FC<PinLockScreenProps> = ({
                 isDark ? 'text-zinc-50' : 'text-stone-900'
               }`}
             >
-              Biblioteca Digital
+              Biblioteca Digital Cristã
             </h1>
             <p
               className={`font-serif text-xs sm:text-sm leading-relaxed max-w-xs mx-auto ${
                 isDark ? 'text-zinc-400' : 'text-stone-600'
               }`}
             >
-              Acesso reservado para leitura e testes. Digite o PIN autorizado para prosseguir.
+              Acesso restrito. Insira o PIN autorizado.
             </p>
           </div>
 

@@ -47,7 +47,7 @@ export const PWAInstallButton: React.FC<PWAInstallButtonProps> = ({
               ? 'border-amber-500/40 bg-amber-500/10 text-amber-800 dark:text-amber-300 hover:bg-amber-500/20 shadow-xs'
               : 'border-black/10 hover:border-black/20 hover:bg-black/5 dark:border-zinc-700 dark:hover:border-zinc-500 dark:hover:bg-zinc-800 dark:text-zinc-200 text-stone-700'
           } ${className}`}
-          title="Instalar Biblioteca Digital no celular"
+          title="Instalar Biblioteca Digital Cristã no celular"
           aria-label="Instalar aplicativo no celular"
         >
           <Smartphone className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0" />

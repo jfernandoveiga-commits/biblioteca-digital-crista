@@ -69,7 +69,7 @@ export const PWAInstallModal: React.FC<PWAInstallModalProps> = ({
           <div className="w-14 h-14 rounded-2xl bg-zinc-900 border border-amber-500/30 p-1 flex items-center justify-center shadow-md shrink-0">
             <img
               src="/pwa-192x192.png"
-              alt="Ícone Biblioteca Digital"
+              alt="Ícone Biblioteca Digital Cristã"
               className="w-12 h-12 rounded-xl object-contain"
               onError={(e) => {
                 // Fallback caso imagem ainda carregando
@@ -92,7 +92,7 @@ export const PWAInstallModal: React.FC<PWAInstallModalProps> = ({
               id="pwa-install-title"
               className="font-serif font-bold text-xl sm:text-2xl mt-0.5 text-stone-900 dark:text-zinc-50"
             >
-              Biblioteca Digital
+              Biblioteca Digital Cristã
             </h2>
             <p className="text-xs text-stone-500 dark:text-zinc-400 font-serif">
               Instale na tela inicial do seu celular
@@ -137,7 +137,7 @@ export const PWAInstallModal: React.FC<PWAInstallModalProps> = ({
               <div>
                 <h4 className="text-sm font-semibold">Aplicativo Já Instalado</h4>
                 <p className="text-xs text-stone-600 dark:text-zinc-300 mt-1 leading-relaxed">
-                  A Biblioteca Digital já está pronta na sua tela inicial! Você pode abri-la diretamente
+                  A Biblioteca Digital Cristã já está pronta na sua tela inicial! Você pode abri-la diretamente
                   pelo ícone do celular para desfrutar da leitura em tela cheia e acesso offline.
                 </p>
               </div>
@@ -227,7 +227,7 @@ export const PWAInstallModal: React.FC<PWAInstallModalProps> = ({
                     3
                   </div>
                   <div className="text-xs text-stone-700 dark:text-zinc-300">
-                    Confirme em <strong>"Instalar"</strong>. O ícone da <strong>Biblioteca Digital</strong> aparecerá
+                    Confirme em <strong>"Instalar"</strong>. O ícone da <strong>Biblioteca Digital Cristã</strong> aparecerá
                     entre os seus apps com tela cheia nativa.
                   </div>
                 </div>
