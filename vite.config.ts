@@ -22,8 +22,8 @@ export default defineConfig(() => {
         ],
         manifest: {
           id: '/',
-          name: 'Biblioteca Digital Cristã',
-          short_name: 'Biblioteca Digital Cristã',
+          name: 'Biblioteca Digital',
+          short_name: 'Biblioteca Digital',
           description:
             'Aplicativo elegante e sóbrio para leitura confortável de livros digitais e consulta bíblica.',
           theme_color: '#18181B',

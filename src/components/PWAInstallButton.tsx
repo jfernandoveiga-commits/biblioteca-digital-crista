@@ -47,8 +47,8 @@ export const PWAInstallButton: React.FC<PWAInstallButtonProps> = ({
               ? 'border-amber-500/40 bg-amber-500/10 text-amber-800 dark:text-amber-300 hover:bg-amber-500/20 shadow-xs'
               : 'border-black/10 hover:border-black/20 hover:bg-black/5 dark:border-zinc-700 dark:hover:border-zinc-500 dark:hover:bg-zinc-800 dark:text-zinc-200 text-stone-700'
           } ${className}`}
-          title="Instalar Biblioteca Digital Cristã no celular"
-          aria-label="Instalar Biblioteca Digital Cristã no celular"
+          title="Instalar Biblioteca Digital no celular"
+          aria-label="Instalar Biblioteca Digital no celular"
         >
           <Smartphone className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
           <span className="hidden sm:inline">Instalar App</span>
@@ -70,7 +70,7 @@ export const PWAInstallButton: React.FC<PWAInstallButtonProps> = ({
           } ${className}`}
         >
           <Smartphone className="w-4 h-4 text-amber-500 shrink-0" />
-          <span>Instalar Biblioteca Digital Cristã</span>
+          <span>Instalar Biblioteca Digital</span>
         </button>
       )}
 
@@ -79,7 +79,7 @@ export const PWAInstallButton: React.FC<PWAInstallButtonProps> = ({
           type="button"
           onClick={handleClick}
           className={`inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full border border-amber-500/30 text-amber-700 dark:text-amber-400 bg-amber-500/10 hover:bg-amber-500/20 transition-colors cursor-pointer ${className}`}
-          title="Instalar Biblioteca Digital Cristã no celular"
+          title="Instalar Biblioteca Digital no celular"
         >
           <Download className="w-3 h-3" />
           <span>Instalar no celular</span>

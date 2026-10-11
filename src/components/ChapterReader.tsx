@@ -491,8 +491,13 @@ export const ChapterReader: React.FC<ChapterReaderProps> = ({
 
                 const hasBookmark = isBookmarksEnabled && isParagraphBookmarked(index);
 
-                // Primeiro parágrafo com abertura clássica
-                if (index === 0) {
+                const isDialogue = trimmed.startsWith('—') || trimmed.startsWith('-');
+                const isQuoteOnly =
+                  (trimmed.startsWith('“') || trimmed.startsWith('"') || trimmed.startsWith('«')) &&
+                  (trimmed.endsWith('”') || trimmed.endsWith('"') || trimmed.endsWith('»') || trimmed.endsWith('”.') || trimmed.endsWith('".'));
+
+                // Primeiro parágrafo com abertura clássica (apenas se for narrativa normal, não diálogo nem citação)
+                if (index === 0 && !isDialogue && !isQuoteOnly) {
                   const firstLetter = paragraph.charAt(0);
                   const restOfParagraph = paragraph.slice(1);
 
@@ -532,9 +537,6 @@ export const ChapterReader: React.FC<ChapterReaderProps> = ({
                   );
                 }
 
-                const isDialogue = trimmed.startsWith('—') || trimmed.startsWith('-');
-                const isQuoteOnly = (trimmed.startsWith('“') || trimmed.startsWith('"')) && (trimmed.endsWith('”') || trimmed.endsWith('"'));
-
                 return (
                   <div
                     key={index}
@@ -564,7 +566,7 @@ export const ChapterReader: React.FC<ChapterReaderProps> = ({
                     <p
                       className={`m-0 relative tracking-normal transition-colors ${
                         isDialogue
-                          ? 'pl-3 sm:pl-3.5 border-l-2 border-stone-300/70 dark:border-zinc-700 font-serif text-stone-850 dark:text-zinc-100'
+                          ? 'pl-3.5 sm:pl-4 py-0.5 border-l-2 border-amber-600/70 dark:border-amber-400/60 font-serif text-stone-850 dark:text-zinc-100'
                           : isQuoteOnly
                           ? 'pl-3.5 sm:pl-4 py-0.5 italic border-l-2 border-amber-600/70 dark:border-amber-400/60 text-stone-850 dark:text-amber-100/90 font-serif'
                           : 'text-stone-850 dark:text-zinc-100'
@@ -635,7 +637,7 @@ export const ChapterReader: React.FC<ChapterReaderProps> = ({
                       )}
                     </div>
 
-                    <div className="font-serif italic text-base sm:text-lg leading-relaxed text-pretty border-l-2 border-stone-400/60 dark:border-amber-400/60 pl-4 my-1 text-stone-850 dark:text-zinc-100">
+                    <div className="font-serif italic text-base sm:text-lg leading-relaxed text-pretty border-l-2 border-amber-600/70 dark:border-amber-400/60 pl-4 my-1 text-stone-850 dark:text-zinc-100">
                       {item.text}
                     </div>
                   </div>

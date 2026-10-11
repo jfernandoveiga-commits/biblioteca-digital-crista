@@ -115,7 +115,7 @@ export const PinLockScreen: React.FC<PinLockScreenProps> = ({
                 isDark ? 'text-zinc-50' : 'text-stone-900'
               }`}
             >
-              Biblioteca Digital Cristã
+              Biblioteca Digital
             </h1>
             <p
               className={`font-serif text-xs sm:text-sm leading-relaxed max-w-xs mx-auto ${
