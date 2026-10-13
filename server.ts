@@ -9,6 +9,8 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
+import { firebaseServerStore } from './src/services/firebaseServerStore';
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -70,12 +72,43 @@ const DEFAULT_CONTENT_AVAILABILITY: ContentAvailabilityConfig = {
         'capitulo-2': true,
       },
     },
-    'e-ai-crentes-ok': {
+    'e-ai-crente': {
       enabled: true,
-      chapters: {},
+      chapters: {
+        'capitulo-1': true,
+      },
     },
   },
 };
+
+import {
+  formatFullName,
+  formatPhoneNumber,
+  validateBrazilianMobilePhone,
+  calculateDetailedAge,
+} from './src/utils/textFormatters';
+
+export type ReaderGender = 'Feminino' | 'Masculino' | 'Prefiro não informar';
+
+export type ReaderMaritalStatus =
+  | 'Solteiro(a)'
+  | 'Casado(a)'
+  | 'União estável'
+  | 'Separado(a)'
+  | 'Divorciado(a)'
+  | 'Viúvo(a)'
+  | 'Prefiro não informar';
+
+export interface ReaderProfile {
+  fullName: string;
+  phone: string;
+  phoneFormatted: string;
+  birthDate: string; // YYYY-MM-DD
+  gender: ReaderGender;
+  maritalStatus: ReaderMaritalStatus;
+  registeredAt: string;
+  updatedAt: string;
+}
 
 export type ReaderAccessStatus = 'active' | 'blocked' | 'revoked';
 
@@ -89,6 +122,8 @@ export interface ReaderAccessRecord {
   expiresAt: string | null;
   lastUsedAt: string | null;
   notes?: string;
+  hasProfile?: boolean;
+  profile?: ReaderProfile | null;
 }
 
 interface SecurityConfig {
@@ -159,10 +194,24 @@ function loadOrCreateSecurityConfig(): SecurityConfig {
           ...(parsed.features || {}),
         };
 
+        const rawContentBooks = parsed.contentAvailability?.books || {};
+        const cleanedContentBooks: Record<string, any> = {};
+        for (const [key, val] of Object.entries(rawContentBooks)) {
+          const normKey = (key === 'e-ai-crentes-ok' || key === 'e-ai-crentes') ? 'e-ai-crente' : key;
+          cleanedContentBooks[normKey] = {
+            ...(cleanedContentBooks[normKey] || {}),
+            ...(val as any),
+            chapters: {
+              ...(cleanedContentBooks[normKey]?.chapters || {}),
+              ...((val as any).chapters || {}),
+            },
+          };
+        }
+
         const contentAvailability: ContentAvailabilityConfig = {
           books: {
             ...DEFAULT_CONTENT_AVAILABILITY.books,
-            ...(parsed.contentAvailability?.books || {}),
+            ...cleanedContentBooks,
           },
         };
 
@@ -264,6 +313,119 @@ function saveSecurityConfig(config: SecurityConfig): void {
 
 // Instância ativa em memória
 const securityConfig: SecurityConfig = loadOrCreateSecurityConfig();
+
+/**
+ * Sincronização inicial inteligente com o Firebase Cloud Firestore:
+ * - Prioriza os dados do Cloud Firestore se existentes (preserva edições em nuvem).
+ * - Se o Firestore estiver vazio (primeira execução), migra automaticamente os dados locais.
+ * - Mantém o arquivo local como cache de contingência e backup.
+ */
+async function syncWithFirestore(): Promise<void> {
+  try {
+    if (!firebaseServerStore.isReady()) {
+      firebaseServerStore.init();
+    }
+    if (!firebaseServerStore.isReady()) {
+      console.log('[Firebase] Operando em modo contingência local.');
+      return;
+    }
+
+    const cloudReaders = await firebaseServerStore.loadAllReaderAccesses();
+    if (cloudReaders.length > 0) {
+      console.log(`[Firebase] Sincronizando ${cloudReaders.length} leitores do Cloud Firestore...`);
+      const map = new Map<string, ReaderAccessRecord>();
+      for (const r of cloudReaders) {
+        if (r.pinHash && r.pinSalt) {
+          map.set(r.id, r as ReaderAccessRecord);
+        }
+      }
+
+      // Preserva eventuais leitores locais novos que não estejam no Firestore e os salva
+      for (const local of securityConfig.readerAccesses || []) {
+        if (!map.has(local.id)) {
+          map.set(local.id, local);
+          await firebaseServerStore.saveReaderAccess(local).catch(() => {});
+        }
+      }
+
+      securityConfig.readerAccesses = Array.from(map.values());
+      securityConfig.readerAccesses.sort(
+        (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+      );
+
+      // Sincroniza configurações gerais se presentes
+      const cloudConfig = await firebaseServerStore.loadSystemConfig();
+      if (cloudConfig) {
+        securityConfig.isLibraryLocked = Boolean(cloudConfig.isLibraryLocked);
+        securityConfig.lockReason = cloudConfig.lockReason || '';
+        securityConfig.features = {
+          ...DEFAULT_FEATURES,
+          ...(cloudConfig.features || {}),
+        };
+        const rawCloudBooks = cloudConfig.contentAvailability?.books || {};
+        const cleanedCloudBooks: Record<string, any> = {};
+        for (const [key, val] of Object.entries(rawCloudBooks)) {
+          const normKey = (key === 'e-ai-crentes-ok' || key === 'e-ai-crentes') ? 'e-ai-crente' : key;
+          cleanedCloudBooks[normKey] = {
+            ...(cleanedCloudBooks[normKey] || {}),
+            ...(val as any),
+            chapters: {
+              ...(cleanedCloudBooks[normKey]?.chapters || {}),
+              ...((val as any).chapters || {}),
+            },
+          };
+        }
+
+        securityConfig.contentAvailability = {
+          books: {
+            ...DEFAULT_CONTENT_AVAILABILITY.books,
+            ...cleanedCloudBooks,
+          },
+        };
+      }
+      saveSecurityConfig(securityConfig);
+      console.log(`[Firebase] Sincronização concluída com sucesso! (${securityConfig.readerAccesses.length} acessos prontos).`);
+    } else {
+      // Caso o Firestore esteja vazio, realiza a migração inicial automática
+      console.log('[Firebase] Firestore vazio detectado. Executando migração inicial automática...');
+      const result = await firebaseServerStore.migrateLocalToFirestore(
+        CONFIG_FILE_PATH,
+        securityConfig.readerAccesses || [],
+        {
+          isLibraryLocked: securityConfig.isLibraryLocked,
+          lockReason: securityConfig.lockReason,
+          lastPinChangedAt: securityConfig.lastPinChangedAt,
+          lastRevokedAt: securityConfig.lastRevokedAt,
+          sessionsRevokedBefore: securityConfig.sessionsRevokedBefore,
+          features: securityConfig.features,
+          contentAvailability: securityConfig.contentAvailability,
+          updatedAt: new Date().toISOString(),
+        }
+      );
+      console.log(`[Firebase] ${result.message}`);
+    }
+  } catch (err: any) {
+    console.warn('[Firebase] Aviso na sincronização com Firestore:', err.message || err);
+  }
+}
+
+async function syncSystemConfigToFirestore(): Promise<void> {
+  if (!firebaseServerStore.isReady()) return;
+  try {
+    await firebaseServerStore.saveSystemConfig({
+      isLibraryLocked: securityConfig.isLibraryLocked,
+      lockReason: securityConfig.lockReason,
+      lastPinChangedAt: securityConfig.lastPinChangedAt,
+      lastRevokedAt: securityConfig.lastRevokedAt,
+      sessionsRevokedBefore: securityConfig.sessionsRevokedBefore,
+      features: securityConfig.features,
+      contentAvailability: securityConfig.contentAvailability,
+      updatedAt: new Date().toISOString(),
+    });
+  } catch (err: any) {
+    console.warn('[Firebase] Falha ao persistir system_config no Firestore:', err.message || err);
+  }
+}
 
 /* ==========================================================================
    SESSÕES DOS LEITORES E DOS ADMINISTRADORES
@@ -479,9 +641,45 @@ app.get('/api/auth/session', (req, res) => {
     return;
   }
 
+  // Verifica se o acesso do leitor ainda existe e está ativo
+  let matchedAccess: ReaderAccessRecord | undefined;
+  if (session.accessId) {
+    matchedAccess = (securityConfig.readerAccesses || []).find((a) => a.id === session.accessId);
+    if (!matchedAccess || matchedAccess.status !== 'active') {
+      activeReaderSessions.delete(token);
+      res.json({
+        authenticated: false,
+        reason: matchedAccess ? matchedAccess.status : 'access_not_found',
+        features: securityConfig.features,
+        contentAvailability: securityConfig.contentAvailability,
+      });
+      return;
+    }
+
+    if (matchedAccess.expiresAt) {
+      const exp = new Date(matchedAccess.expiresAt).getTime();
+      if (!isNaN(exp) && Date.now() > exp) {
+        activeReaderSessions.delete(token);
+        res.json({
+          authenticated: false,
+          reason: 'access_expired',
+          features: securityConfig.features,
+          contentAvailability: securityConfig.contentAvailability,
+        });
+        return;
+      }
+    }
+  }
+
+  const hasProfile = Boolean(matchedAccess ? (matchedAccess.hasProfile && matchedAccess.profile) : false);
+
   res.json({
     authenticated: true,
     expiresAt: session.expiresAt,
+    accessId: session.accessId,
+    readerName: matchedAccess?.profile?.fullName || matchedAccess?.name || session.readerName || 'Leitor',
+    hasProfile,
+    readerProfile: matchedAccess?.profile || null,
     features: securityConfig.features,
     contentAvailability: securityConfig.contentAvailability,
   });
@@ -701,11 +899,170 @@ app.post('/api/auth/verify-pin', (req, res) => {
   }
   res.setHeader('Set-Cookie', cookieOptions.join('; '));
 
+  const hasProfile = Boolean(matchedAccess.hasProfile && matchedAccess.profile);
+
   res.json({
     success: true,
     token,
     expiresAt,
-    readerName: matchedAccess.name,
+    accessId: matchedAccess.id,
+    readerName: matchedAccess.profile?.fullName || matchedAccess.name,
+    hasProfile,
+    readerProfile: matchedAccess.profile || null,
+  });
+});
+
+// 2.1 Cadastro Pessoal do Leitor no Primeiro Acesso (vinculado ao identificador interno do PIN)
+app.post('/api/auth/reader-profile', (req, res) => {
+  const token = extractReaderToken(req);
+  if (!token) {
+    res.status(401).json({ success: false, error: 'Sessão não autorizada ou expirada.' });
+    return;
+  }
+
+  const session = activeReaderSessions.get(token);
+  if (!session || Date.now() > session.expiresAt) {
+    res.status(401).json({ success: false, error: 'Sessão inválida. Insira o PIN novamente.' });
+    return;
+  }
+
+  if (!session.accessId) {
+    res.status(400).json({ success: false, error: 'Sessão não vinculada a um identificador de leitor válido.' });
+    return;
+  }
+
+  const reader = (securityConfig.readerAccesses || []).find((a) => a.id === session.accessId);
+  if (!reader) {
+    res.status(404).json({ success: false, error: 'Acesso do leitor não encontrado.' });
+    return;
+  }
+
+  if (reader.status !== 'active') {
+    res.status(403).json({ success: false, error: 'Este acesso não está ativo.' });
+    return;
+  }
+
+  const { fullName, phone, birthDate, gender, maritalStatus } = req.body || {};
+
+  // Validação 1: Nome Completo
+  const rawFullName = typeof fullName === 'string' ? fullName.trim() : '';
+  if (!rawFullName || rawFullName.length < 3) {
+    res.status(400).json({ success: false, error: 'Por favor, informe seu nome completo (mínimo 3 caracteres).' });
+    return;
+  }
+  const formattedFullName = formatFullName(rawFullName);
+  if (formattedFullName.split(' ').length < 2) {
+    res.status(400).json({ success: false, error: 'Por favor, informe seu nome e pelo menos um sobrenome.' });
+    return;
+  }
+
+  // Validação 2: Celular WhatsApp Brasileiro com DDD
+  const rawPhone = typeof phone === 'string' ? phone.trim() : '';
+  const phoneValidation = validateBrazilianMobilePhone(rawPhone);
+  if (!phoneValidation.isValid) {
+    res.status(400).json({
+      success: false,
+      error: phoneValidation.error || 'Número de telefone celular inválido. Formato esperado: (DD) 9XXXX-XXXX.',
+    });
+    return;
+  }
+  const normalizedPhone = phoneValidation.normalized;
+  const formattedPhone = formatPhoneNumber(normalizedPhone);
+
+  // Validação 3: Data de nascimento e cálculo de idade
+  const rawBirthDate = typeof birthDate === 'string' ? birthDate.trim() : '';
+  const ageResult = calculateDetailedAge(rawBirthDate);
+  if (!ageResult.isValid) {
+    res.status(400).json({
+      success: false,
+      error: ageResult.error || 'Data de nascimento inválida ou futura.',
+    });
+    return;
+  }
+
+  // Validação 4: Sexo
+  const validGenders: ReaderGender[] = ['Feminino', 'Masculino', 'Prefiro não informar'];
+  if (!validGenders.includes(gender)) {
+    res.status(400).json({ success: false, error: 'Opção de sexo inválida.' });
+    return;
+  }
+
+  // Validação 5: Estado Civil
+  const validMaritalStatuses: ReaderMaritalStatus[] = [
+    'Solteiro(a)',
+    'Casado(a)',
+    'União estável',
+    'Separado(a)',
+    'Divorciado(a)',
+    'Viúvo(a)',
+    'Prefiro não informar',
+  ];
+  if (!validMaritalStatuses.includes(maritalStatus)) {
+    res.status(400).json({ success: false, error: 'Opção de estado civil inválida.' });
+    return;
+  }
+
+  // Persiste dados no identificador interno do leitor
+  const now = new Date().toISOString();
+  reader.hasProfile = true;
+  reader.name = formattedFullName;
+  reader.profile = {
+    fullName: formattedFullName,
+    phone: normalizedPhone,
+    phoneFormatted: formattedPhone,
+    birthDate: rawBirthDate,
+    gender,
+    maritalStatus,
+    registeredAt: reader.profile?.registeredAt || now,
+    updatedAt: now,
+  };
+
+  session.readerName = formattedFullName;
+  saveSecurityConfig(securityConfig);
+
+  // Sincroniza imediatamente com o Cloud Firestore
+  firebaseServerStore.saveReaderAccess(reader).catch((err) => {
+    console.warn('[Firebase] Erro ao sincronizar cadastro do leitor no Firestore:', err);
+  });
+
+  res.json({
+    success: true,
+    hasProfile: true,
+    profile: reader.profile,
+    readerName: formattedFullName,
+    message: 'Cadastro concluído com sucesso!',
+  });
+});
+
+// 2.2 Consulta o perfil pessoal do próprio leitor (isolamento estrito: nunca outros leitores)
+app.get('/api/auth/reader-profile', (req, res) => {
+  const token = extractReaderToken(req);
+  if (!token) {
+    res.status(401).json({ success: false, error: 'Sessão não autorizada.' });
+    return;
+  }
+
+  const session = activeReaderSessions.get(token);
+  if (!session || Date.now() > session.expiresAt) {
+    res.status(401).json({ success: false, error: 'Sessão inválida.' });
+    return;
+  }
+
+  if (!session.accessId) {
+    res.status(404).json({ success: false, error: 'Acesso não encontrado.' });
+    return;
+  }
+
+  const reader = (securityConfig.readerAccesses || []).find((a) => a.id === session.accessId);
+  if (!reader) {
+    res.status(404).json({ success: false, error: 'Leitor não localizado.' });
+    return;
+  }
+
+  res.json({
+    success: true,
+    hasProfile: Boolean(reader.hasProfile && reader.profile),
+    profile: reader.profile || null,
   });
 });
 
@@ -916,6 +1273,7 @@ app.post('/api/admin/update-pin', requireAdminAuth, (req, res) => {
   }
 
   saveSecurityConfig(securityConfig);
+  syncSystemConfigToFirestore();
 
   res.json({
     success: true,
@@ -933,6 +1291,7 @@ app.post('/api/admin/toggle-lock', requireAdminAuth, (req, res) => {
   securityConfig.lockReason = typeof reason === 'string' ? reason.trim() : '';
 
   saveSecurityConfig(securityConfig);
+  syncSystemConfigToFirestore();
 
   res.json({
     success: true,
@@ -952,6 +1311,7 @@ app.post('/api/admin/revoke-sessions', requireAdminAuth, (_req, res) => {
   securityConfig.lastRevokedAt = new Date().toISOString();
 
   saveSecurityConfig(securityConfig);
+  syncSystemConfigToFirestore();
 
   res.json({
     success: true,
@@ -999,6 +1359,7 @@ app.post('/api/admin/features', requireAdminAuth, (req, res) => {
   }
 
   saveSecurityConfig(securityConfig);
+  syncSystemConfigToFirestore();
 
   res.json({
     success: true,
@@ -1050,6 +1411,7 @@ app.post('/api/admin/content-availability', requireAdminAuth, (req, res) => {
   }
 
   saveSecurityConfig(securityConfig);
+  syncSystemConfigToFirestore();
 
   res.json({
     success: true,
@@ -1072,6 +1434,8 @@ function sanitizeReaderAccess(acc: ReaderAccessRecord) {
     expiresAt: acc.expiresAt,
     lastUsedAt: acc.lastUsedAt,
     notes: acc.notes || '',
+    hasProfile: Boolean(acc.hasProfile && acc.profile),
+    profile: acc.profile || null,
   };
 }
 
@@ -1179,6 +1543,11 @@ app.post('/api/admin/readers', requireAdminAuth, (req, res) => {
   securityConfig.readerAccesses.unshift(newRecord);
   saveSecurityConfig(securityConfig);
 
+  // Sincroniza imediatamente com o Cloud Firestore
+  firebaseServerStore.saveReaderAccess(newRecord).catch((err) => {
+    console.warn('[Firebase] Erro ao salvar novo leitor no Firestore:', err);
+  });
+
   // Retorna o PIN em texto puro APENAS NESTA RESPOSTA de criação (para exibição única)
   res.status(201).json({
     success: true,
@@ -1224,6 +1593,11 @@ app.patch('/api/admin/readers/:id/status', requireAdminAuth, (req, res) => {
 
   saveSecurityConfig(securityConfig);
 
+  // Sincroniza imediatamente com o Cloud Firestore
+  firebaseServerStore.saveReaderAccess(target).catch((err) => {
+    console.warn('[Firebase] Erro ao atualizar status do leitor no Firestore:', err);
+  });
+
   res.json({
     success: true,
     access: sanitizeReaderAccess(target),
@@ -1255,10 +1629,48 @@ app.delete('/api/admin/readers/:id', requireAdminAuth, (req, res) => {
 
   saveSecurityConfig(securityConfig);
 
+  // Exclui imediatamente do Cloud Firestore
+  firebaseServerStore.deleteReaderAccess(id).catch((err) => {
+    console.warn('[Firebase] Erro ao excluir leitor do Firestore:', err);
+  });
+
   res.json({
     success: true,
     message: `Acesso de "${removed.name}" excluído com sucesso.`,
   });
+});
+
+/* ==========================================================================
+   11. DIAGNÓSTICO E GESTÃO DO FIREBASE CLOUD FIRESTORE (/api/admin/firebase/*)
+   ========================================================================== */
+
+// 11.1 Consultar status detalhado da conexão com o Firebase Firestore
+app.get('/api/admin/firebase/status', requireAdminAuth, async (_req, res) => {
+  const status = await firebaseServerStore.getStatus(CONFIG_FILE_PATH);
+  res.json({
+    success: true,
+    status,
+    readerAccessesCount: (securityConfig.readerAccesses || []).length,
+  });
+});
+
+// 11.2 Disparar sincronização / migração manual com o Firebase Firestore
+app.post('/api/admin/firebase/migrate', requireAdminAuth, async (_req, res) => {
+  const result = await firebaseServerStore.migrateLocalToFirestore(
+    CONFIG_FILE_PATH,
+    securityConfig.readerAccesses || [],
+    {
+      isLibraryLocked: securityConfig.isLibraryLocked,
+      lockReason: securityConfig.lockReason,
+      lastPinChangedAt: securityConfig.lastPinChangedAt,
+      lastRevokedAt: securityConfig.lastRevokedAt,
+      sessionsRevokedBefore: securityConfig.sessionsRevokedBefore,
+      features: securityConfig.features,
+      contentAvailability: securityConfig.contentAvailability,
+      updatedAt: new Date().toISOString(),
+    }
+  );
+  res.json(result);
 });
 
 
@@ -1267,6 +1679,9 @@ app.delete('/api/admin/readers/:id', requireAdminAuth, (req, res) => {
    ========================================================================== */
 
 async function startServer() {
+  // Sincroniza dados persistentes com o Cloud Firestore antes de abrir as portas
+  await syncWithFirestore();
+
   const isProd = process.env.NODE_ENV === 'production';
   const httpServer = http.createServer(app);
 
@@ -1290,7 +1705,7 @@ async function startServer() {
 
   httpServer.listen(PORT, '0.0.0.0', () => {
     console.log(`[Biblioteca Digital Cristã] Servidor ativo em http://0.0.0.0:${PORT}`);
-    console.log(`[Segurança] Área Administrativa (/admin) e Validação de PIN ativas com persistência.`);
+    console.log(`[Segurança] Área Administrativa (/admin), Validação de PIN e Firebase Firestore ativos.`);
   });
 }
 

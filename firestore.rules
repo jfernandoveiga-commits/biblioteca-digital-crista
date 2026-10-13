@@ -1,0 +1,23 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Default deny global
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Acessos e cadastros de leitores da Biblioteca Digital
+    match /reader_accesses/{accessId} {
+      allow get, list: if true;
+      allow create, update: if request.resource.data.name is string
+        && request.resource.data.status in ['active', 'blocked', 'revoked'];
+      allow delete: if true;
+    }
+
+    // Configurações globais de segurança da Biblioteca Digital
+    match /system_config/{configId} {
+      allow get, list: if true;
+      allow write: if request.resource.data.isLibraryLocked is bool;
+    }
+  }
+}

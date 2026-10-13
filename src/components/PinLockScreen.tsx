@@ -6,7 +6,7 @@ import { PWAInstallButton } from './PWAInstallButton';
 
 interface PinLockScreenProps {
   theme?: ReadingTheme;
-  onAuthenticated: () => void;
+  onAuthenticated: (result?: VerifyPinResult) => void;
   onNavigateToAdmin?: () => void;
 }
 
@@ -66,7 +66,7 @@ export const PinLockScreen: React.FC<PinLockScreenProps> = ({
 
     if (result.success) {
       setErrorMessage(null);
-      onAuthenticated();
+      onAuthenticated(result);
     } else {
       setErrorMessage(result.error || 'PIN incorreto. Tente novamente.');
       if (typeof result.remainingAttempts === 'number') {

@@ -22,73 +22,150 @@
   "contentAvailability": {
     "books": {
       "entre-a-cruz-e-o-mundo": {
+        "chapters": {
+          "capitulo-2": true,
+          "capitulo-1": true
+        },
+        "enabled": true
+      },
+      "e-ai-crente": {
         "enabled": true,
         "chapters": {
-          "capitulo-1": true,
-          "capitulo-2": true
+          "capitulo-1": true
         }
-      },
-      "e-ai-crentes-ok": {
-        "enabled": true,
-        "chapters": {}
       }
     }
   },
   "readerAccesses": [
     {
-      "id": "reader-1791725566031-f8317817",
-      "name": "Leitor Expirável",
-      "pinHash": "d899eecd6c7e4717889b7d50c73fcb8800acb9265e270bcec607e6d3d7f7591c",
-      "pinSalt": "560972e56212bc4fb5ea1a4449bc8c9f",
       "status": "active",
-      "createdAt": "2026-10-11T13:32:46.032Z",
-      "expiresAt": "2026-10-11T13:32:47.518Z",
+      "expiresAt": null,
+      "updatedAt": "2026-10-12T20:57:50.968Z",
+      "pinSalt": "b966afd4ab3307b52b2cff568ca26543",
+      "profile": {
+        "maritalStatus": "Casado(a)",
+        "phoneFormatted": "(19) 98877-6655",
+        "gender": "Masculino",
+        "phone": "19988776655",
+        "registeredAt": "2026-10-12T20:55:09.543Z",
+        "fullName": "Carlos Eduardo da Rocha",
+        "updatedAt": "2026-10-12T20:55:09.543Z",
+        "birthDate": "1992-08-20"
+      },
+      "notes": "Leitor de teste Firebase",
+      "createdAt": "2026-10-12T20:55:09.491Z",
+      "id": "reader-1791838509491-2c019e49",
+      "pinHash": "95c4abbee68ae7a72b14282b7d07256a7e3de19b2330f809f69e3b96e151a151",
+      "hasProfile": true,
+      "name": "Carlos Eduardo da Rocha",
+      "lastUsedAt": "2026-10-12T20:55:09.515Z"
+    },
+    {
+      "createdAt": "2026-10-12T20:35:34.550Z",
+      "id": "reader-1791837334550-656857d3",
+      "status": "active",
+      "notes": "Criado para teste de cadastro de primeiro acesso",
+      "updatedAt": "2026-10-12T20:57:51.074Z",
+      "name": "José Fernando Veiga",
+      "expiresAt": null,
+      "profile": {
+        "maritalStatus": "Solteiro(a)",
+        "phoneFormatted": "(19) 98102-6699",
+        "phone": "19981026699",
+        "registeredAt": "2026-10-12T20:35:34.573Z",
+        "gender": "Masculino",
+        "fullName": "José Fernando Veiga",
+        "updatedAt": "2026-10-12T20:35:34.573Z",
+        "birthDate": "1995-04-20"
+      },
+      "pinSalt": "b197c2edc867aca87423ad4e94432da2",
+      "hasProfile": true,
+      "lastUsedAt": "2026-10-12T20:35:34.586Z",
+      "pinHash": "930a84e0dcb52e838617b3bb2319598f795e70d352e057f90e0e55ecfcdcecc4"
+    },
+    {
+      "name": "Novo Leitor Teste",
+      "pinHash": "90efbf038d62193fb34dc0d7c0279ded5d7047cf689bf0cd5442c09753aa04ca",
+      "profile": null,
+      "pinSalt": "63e8865b3707de8039202e9bcc8e09e4",
+      "id": "reader-1791837319194-13916616",
+      "lastUsedAt": "2026-10-12T20:35:19.205Z",
+      "createdAt": "2026-10-12T20:35:19.195Z",
+      "expiresAt": null,
+      "status": "active",
+      "notes": "Criado para teste de cadastro de primeiro acesso",
+      "updatedAt": "2026-10-12T20:57:51.221Z",
+      "hasProfile": false
+    },
+    {
+      "status": "active",
+      "notes": "",
       "lastUsedAt": "2026-10-11T13:32:46.037Z",
-      "notes": ""
+      "createdAt": "2026-10-11T13:32:46.032Z",
+      "name": "Leitor Expirável",
+      "pinSalt": "560972e56212bc4fb5ea1a4449bc8c9f",
+      "profile": null,
+      "expiresAt": "2026-10-11T13:32:47.518Z",
+      "pinHash": "d899eecd6c7e4717889b7d50c73fcb8800acb9265e270bcec607e6d3d7f7591c",
+      "hasProfile": false,
+      "id": "reader-1791725566031-f8317817",
+      "updatedAt": "2026-10-12T20:57:51.330Z"
     },
     {
-      "id": "reader-1791725557496-b49ea6b4",
-      "name": "Leitor Para Bloquear",
-      "pinHash": "8803cdf5c0afd60ae398249fe66a58cbd7139cff345fc13c74c16da7e37f65a5",
-      "pinSalt": "aa2ad28ef1dde445864af985eba8d1f7",
       "status": "revoked",
-      "createdAt": "2026-10-11T13:32:37.497Z",
-      "expiresAt": null,
       "lastUsedAt": "2026-10-11T13:32:37.515Z",
-      "notes": ""
+      "createdAt": "2026-10-11T13:32:37.497Z",
+      "notes": "",
+      "pinSalt": "aa2ad28ef1dde445864af985eba8d1f7",
+      "profile": null,
+      "expiresAt": null,
+      "hasProfile": false,
+      "pinHash": "8803cdf5c0afd60ae398249fe66a58cbd7139cff345fc13c74c16da7e37f65a5",
+      "updatedAt": "2026-10-12T20:57:51.409Z",
+      "name": "Leitor Para Bloquear",
+      "id": "reader-1791725557496-b49ea6b4"
     },
     {
-      "id": "reader-1791725548520-46e11574",
-      "name": "Leitor Teste Manual",
+      "notes": "Criado manual",
+      "expiresAt": null,
+      "status": "active",
       "pinHash": "c82f428c0e9dc98e79bb91c7aabf589510fac95794be0e94555317196180df1a",
-      "pinSalt": "64d71aeeafe8a270de023da6b5dae47d",
-      "status": "active",
+      "updatedAt": "2026-10-12T20:57:51.484Z",
+      "hasProfile": false,
       "createdAt": "2026-10-11T13:32:28.520Z",
-      "expiresAt": null,
       "lastUsedAt": null,
-      "notes": "Criado manual"
+      "name": "Leitor Teste Manual",
+      "id": "reader-1791725548520-46e11574",
+      "profile": null,
+      "pinSalt": "64d71aeeafe8a270de023da6b5dae47d"
     },
     {
-      "id": "reader-1791725548510-c93bfc7f",
-      "name": "Leitor Teste Auto",
-      "pinHash": "5823793fabf0c1e4ee13a70bd9b4c968d561cb05e98d5dcdc849c5f9ac42eef6",
+      "hasProfile": false,
+      "expiresAt": null,
+      "profile": null,
       "pinSalt": "2a0955f0c3d47d86f1360146dd6cdbe3",
-      "status": "active",
+      "updatedAt": "2026-10-12T20:57:51.588Z",
+      "id": "reader-1791725548510-c93bfc7f",
       "createdAt": "2026-10-11T13:32:28.510Z",
-      "expiresAt": null,
+      "pinHash": "5823793fabf0c1e4ee13a70bd9b4c968d561cb05e98d5dcdc849c5f9ac42eef6",
+      "status": "active",
       "lastUsedAt": "2026-10-11T13:32:28.531Z",
-      "notes": "Criado via teste"
+      "notes": "Criado via teste",
+      "name": "Leitor Teste Auto"
     },
     {
-      "id": "access-initial-default",
-      "name": "Acesso Padrão Inicial",
-      "pinHash": "68a042a5654d3211bf2a8a27ed971090e7d0514c8e49110cc37462d75168482f",
       "pinSalt": "61985b4a8abf3cc0219d501b4a2b61b5",
+      "profile": null,
+      "pinHash": "68a042a5654d3211bf2a8a27ed971090e7d0514c8e49110cc37462d75168482f",
+      "name": "Acesso Padrão Inicial",
       "status": "active",
-      "createdAt": "2026-10-10T16:41:50.949Z",
+      "hasProfile": false,
       "expiresAt": null,
-      "lastUsedAt": null,
-      "notes": "Acesso inicial configurado pelo sistema"
+      "updatedAt": "2026-10-12T20:57:51.703Z",
+      "createdAt": "2026-10-10T16:41:50.949Z",
+      "notes": "Acesso inicial configurado pelo sistema",
+      "id": "access-initial-default",
+      "lastUsedAt": "2026-10-12T20:37:52.783Z"
     }
   ]
 }

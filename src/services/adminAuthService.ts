@@ -586,5 +586,71 @@ export const adminAuthService = {
       };
     }
   },
+
+  async getFirebaseStatus(): Promise<{
+    success: boolean;
+    status?: {
+      type: string;
+      isConnected: boolean;
+      mode: string;
+      projectId: string;
+      databaseId: string;
+      connectionError?: string;
+      backupFileExists: boolean;
+      totalReadersInFirestore?: number;
+    };
+    readerAccessesCount?: number;
+    error?: string;
+  }> {
+    try {
+      const response = await fetch('/api/admin/firebase/status', {
+        headers: this.getAuthHeaders(),
+        credentials: 'include',
+      });
+      const data = await response.json();
+      if (!response.ok || !data.success) {
+        return {
+          success: false,
+          error: data.error || 'Falha ao obter status do Firebase.',
+        };
+      }
+      return {
+        success: true,
+        status: data.status,
+        readerAccessesCount: data.readerAccessesCount,
+      };
+    } catch (err) {
+      console.error('[adminAuthService] Erro ao buscar status do Firebase:', err);
+      return {
+        success: false,
+        error: 'Erro de conexão com o servidor ao consultar status do Firebase.',
+      };
+    }
+  },
+
+  async triggerFirebaseMigration(): Promise<{
+    success: boolean;
+    migratedCount?: number;
+    totalLocalCount?: number;
+    backupPath?: string;
+    message?: string;
+    error?: string;
+  }> {
+    try {
+      const response = await fetch('/api/admin/firebase/migrate', {
+        method: 'POST',
+        headers: this.getAuthHeaders(),
+        credentials: 'include',
+      });
+      const data = await response.json();
+      return data;
+    } catch (err: any) {
+      console.error('[adminAuthService] Erro ao acionar migração do Firebase:', err);
+      return {
+        success: false,
+        error: 'Erro de conexão ao sincronizar com o Firebase.',
+      };
+    }
+  },
 };
 

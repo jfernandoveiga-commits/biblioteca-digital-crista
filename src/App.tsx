@@ -7,6 +7,7 @@ import { PinLockScreen } from './components/PinLockScreen';
 import { AdminPanel } from './components/AdminPanel';
 import { PWAInstallButton } from './components/PWAInstallButton';
 import { OfflineIndicator } from './components/OfflineIndicator';
+import { ReaderRegistrationScreen } from './components/ReaderRegistrationScreen';
 import { authService } from './services/authService';
 import {
   ReadingTheme,
@@ -16,6 +17,7 @@ import {
   DEFAULT_LIBRARY_FEATURES,
   Book,
   Chapter,
+  ReaderProfile,
 } from './types/book';
 import { BibleReferenceTarget } from './types/bible';
 import {
@@ -44,9 +46,12 @@ export default function App() {
     return '/';
   });
 
-  // Estado de controle de acesso por PIN (validado via servidor)
+  // Estado de controle de acesso por PIN e cadastro pessoal do leitor
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
   const [isCheckingAuth, setIsCheckingAuth] = useState<boolean>(true);
+  const [hasProfile, setHasProfile] = useState<boolean | null>(null);
+  const [readerProfile, setReaderProfile] = useState<ReaderProfile | null>(null);
+  const [readerName, setReaderName] = useState<string>('');
 
   // Funcionalidades e Disponibilidade gerenciadas pelo Administrador
   const [features, setFeatures] = useState<LibraryFeaturesConfig>(DEFAULT_LIBRARY_FEATURES);
@@ -61,14 +66,37 @@ export default function App() {
       },
       'e-ai-crente': {
         enabled: true,
-        chapters: {},
+        chapters: {
+          'capitulo-1': true,
+        },
       },
     },
   });
 
-  // Livro e Capítulo Ativos na Leitura
-  const [currentBookId, setCurrentBookId] = useState<string>('entre-a-cruz-e-o-mundo');
-  const [currentChapterId, setCurrentChapterId] = useState<string>('capitulo-1');
+  // Livro e Capítulo Ativos na Leitura (persistidos para restaurar após recarregar a página ou reiniciar)
+  const [currentBookId, setCurrentBookId] = useState<string>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('bib_active_book_id');
+      if (saved && libraryBooks.some((b) => b.id === saved)) {
+        return saved;
+      }
+    }
+    return 'entre-a-cruz-e-o-mundo';
+  });
+  const [currentChapterId, setCurrentChapterId] = useState<string>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('bib_active_chapter_id');
+      if (saved) return saved;
+    }
+    return 'capitulo-1';
+  });
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('bib_active_book_id', currentBookId);
+      localStorage.setItem('bib_active_chapter_id', currentChapterId);
+    }
+  }, [currentBookId, currentChapterId]);
 
   // Navegação entre Leitor Literário e Leitor Bíblico
   const [currentView, setCurrentView] = useState<'reader' | 'bible'>('reader');
@@ -102,6 +130,15 @@ export default function App() {
         const session = await authService.checkSession();
         if (isMounted) {
           setIsAuthenticated(session.authenticated);
+          if (session.authenticated) {
+            setHasProfile(session.hasProfile ?? false);
+            setReaderProfile(session.readerProfile || null);
+            setReaderName(session.readerName || '');
+          } else {
+            setHasProfile(null);
+            setReaderProfile(null);
+            setReaderName('');
+          }
           if (session.features) {
             setFeatures(session.features);
           }
@@ -121,6 +158,9 @@ export default function App() {
       } catch {
         if (isMounted) {
           setIsAuthenticated(false);
+          setHasProfile(null);
+          setReaderProfile(null);
+          setReaderName('');
         }
       } finally {
         if (isMounted) {
@@ -139,6 +179,9 @@ export default function App() {
   const handleLogout = async () => {
     await authService.logout();
     setIsAuthenticated(false);
+    setHasProfile(null);
+    setReaderProfile(null);
+    setReaderName('');
     setShowLibraryModal(false);
   };
 
@@ -281,10 +324,29 @@ export default function App() {
     return (
       <PinLockScreen
         theme={theme}
-        onAuthenticated={() => {
+        onAuthenticated={(result) => {
           setIsAuthenticated(true);
+          setHasProfile(result?.hasProfile ?? false);
+          setReaderProfile(result?.readerProfile || null);
+          setReaderName(result?.readerName || '');
         }}
         onNavigateToAdmin={() => navigateTo('/admin')}
+      />
+    );
+  }
+
+  // ROTA 3.5: Tela de Cadastro Pessoal do Leitor (Primeiro Acesso com PIN)
+  if (hasProfile === false) {
+    return (
+      <ReaderRegistrationScreen
+        theme={theme}
+        initialName={readerName}
+        onRegistrationSuccess={(profile) => {
+          setHasProfile(true);
+          setReaderProfile(profile);
+          setReaderName(profile.fullName);
+        }}
+        onLogout={handleLogout}
       />
     );
   }

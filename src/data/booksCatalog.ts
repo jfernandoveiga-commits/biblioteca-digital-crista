@@ -1,8 +1,9 @@
 import { Book } from '../types/book';
 import { chapter1 } from './sampleChapter';
 import { chapter2 } from './chapter2';
+import { eAiCrenteChapter1 } from './eAiCrenteChapter1';
 
-export { chapter2 };
+export { chapter2, eAiCrenteChapter1 };
 
 /**
  * Catálogo Oficial da Biblioteca Digital.
@@ -35,23 +36,22 @@ export const book1: Book = {
 };
 
 /**
- * Livro 2: E AÍ, CRENTE?
+ * Livro 2: E AÍ, CRENTE!
  * Autor: Pr. Fernando Veiga
- * Registrado no catálogo oficial com status editorial de preparação,
- * sem nenhum texto fictício ou de demonstração gerado por IA.
+ * Capítulo 1: "Crente fofoqueiro: o rádio ambulante do inferno" publicado integralmente
  */
 export const book2: Book = {
   id: 'e-ai-crente',
-  title: 'E AÍ, CRENTE?',
+  title: 'E AÍ, CRENTE!',
   author: 'Pr. Fernando Veiga',
   genre: 'Vida Cristã, Juventude e Discipulado',
   synopsis:
     'Reflexões, exortações e ensinamentos práticos do Pr. Fernando Veiga para a juventude cristã, abordando fé autêntica, santidade e vida no cotidiano.',
-  totalChapters: 0,
-  status: 'in_preparation',
+  totalChapters: 1,
+  status: 'published',
   editorialNote:
-    'Obra autoral do Pr. Fernando Veiga em fase de preparação editorial. Aguardando envio e publicação dos capítulos originais pelo autor.',
-  chapters: [],
+    'Obra autoral do Pr. Fernando Veiga. Capítulo 1 publicado integralmente conforme texto original fornecido pelo autor.',
+  chapters: [eAiCrenteChapter1],
 };
 
 /**

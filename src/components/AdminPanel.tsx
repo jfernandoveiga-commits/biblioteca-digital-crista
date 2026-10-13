@@ -42,6 +42,13 @@ import {
   Calendar,
   Sparkles,
   Clock,
+  Printer,
+  FileSpreadsheet,
+  ExternalLink,
+  MessageCircle,
+  Database,
+  Cloud,
+  Server,
 } from 'lucide-react';
 import { adminAuthService, AdminSystemStatus } from '../services/adminAuthService';
 import {
@@ -55,6 +62,7 @@ import {
 } from '../types/book';
 import { libraryBooks } from '../data/booksCatalog';
 import { PWAInstallButton } from './PWAInstallButton';
+import { calculateDetailedAge } from '../utils/textFormatters';
 
 interface AdminPanelProps {
   theme?: ReadingTheme;
@@ -100,6 +108,20 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const [isCreatingReader, setIsCreatingReader] = useState<boolean>(false);
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'blocked' | 'revoked'>('all');
+  const [registrationFilter, setRegistrationFilter] = useState<'all' | 'registered' | 'pending'>('all');
+  const [selectedReaderDetails, setSelectedReaderDetails] = useState<ReaderAccessRecord | null>(null);
+
+  // Status e sincronização do Firebase Cloud Firestore
+  const [firebaseStatus, setFirebaseStatus] = useState<{
+    isConnected: boolean;
+    type: string;
+    mode: string;
+    projectId: string;
+    databaseId: string;
+    totalReadersInFirestore?: number;
+    backupFileExists: boolean;
+  } | null>(null);
+  const [isMigratingFirebase, setIsMigratingFirebase] = useState<boolean>(false);
 
   // Modal de Exibição Única e Segura do PIN Recém-Criado
   const [createdPinModal, setCreatedPinModal] = useState<{
@@ -137,7 +159,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       },
       'e-ai-crente': {
         enabled: true,
-        chapters: {},
+        chapters: {
+          'capitulo-1': true,
+        },
       },
     },
   });
@@ -211,6 +235,37 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     }
   };
 
+  // Carrega status detalhado do Firebase Cloud Firestore
+  const fetchFirebaseStatus = async () => {
+    try {
+      const res = await adminAuthService.getFirebaseStatus();
+      if (res.success && res.status) {
+        setFirebaseStatus(res.status);
+      }
+    } catch {
+      // Ignora erro
+    }
+  };
+
+  const handleMigrateFirebase = async () => {
+    setIsMigratingFirebase(true);
+    setActionErrorMessage(null);
+    try {
+      const res = await adminAuthService.triggerFirebaseMigration();
+      if (res.success) {
+        setActionSuccessMessage(res.message || 'Sincronização com Cloud Firestore concluída!');
+        await fetchFirebaseStatus();
+        await fetchReaders();
+      } else {
+        setActionErrorMessage(res.error || res.message || 'Falha ao sincronizar com o Firebase.');
+      }
+    } catch {
+      setActionErrorMessage('Erro de conexão ao sincronizar com o Firebase.');
+    } finally {
+      setIsMigratingFirebase(false);
+    }
+  };
+
   // Carrega lista de leitores cadastrados
   const fetchReaders = async () => {
     setIsLoadingReaders(true);
@@ -219,6 +274,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       if (res.success && res.readers) {
         setReaders(res.readers);
       }
+      await fetchFirebaseStatus();
     } catch {
       console.warn('Erro ao carregar lista de leitores');
     } finally {
@@ -230,6 +286,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     if (isAuthenticated) {
       fetchStatus();
       fetchReaders();
+      fetchFirebaseStatus();
     }
   }, [isAuthenticated]);
 
@@ -735,6 +792,103 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     }
   };
 
+  const formatBirthDate = (isoDate?: string | null) => {
+    if (!isoDate) return '-';
+    try {
+      const parts = isoDate.split('-');
+      if (parts.length === 3) {
+        return `${parts[2]}/${parts[1]}/${parts[0]}`;
+      }
+      return isoDate;
+    } catch {
+      return isoDate;
+    }
+  };
+
+  const getReaderDetailedAge = (birthDate?: string | null) => {
+    if (!birthDate) return '-';
+    try {
+      const res = calculateDetailedAge(birthDate);
+      return res.isValid ? res.formatted : '-';
+    } catch {
+      return '-';
+    }
+  };
+
+  const handleExportCSV = () => {
+    if (!readers || readers.length === 0) {
+      return;
+    }
+
+    const headers = [
+      'ID',
+      'Nome Completo',
+      'Telefone Celular (WhatsApp)',
+      'Data de Nascimento',
+      'Idade Detalhada',
+      'Sexo',
+      'Estado Civil',
+      'Status do PIN',
+      'Cadastro Concluído',
+      'Data de Criação',
+      'Último Acesso',
+      'Validade',
+      'Observações',
+    ];
+
+    const escapeCsv = (val: string | null | undefined) => {
+      if (val === null || val === undefined) return '""';
+      const str = String(val).replace(/"/g, '""');
+      return `"${str}"`;
+    };
+
+    const rows = readers.map((r) => {
+      const profile = r.profile;
+      const isExpired = r.expiresAt && new Date(r.expiresAt).getTime() < Date.now();
+      const statusText =
+        r.status === 'active'
+          ? isExpired
+            ? 'Expirado'
+            : 'Ativo'
+          : r.status === 'blocked'
+          ? 'Bloqueado'
+          : 'Revogado';
+
+      return [
+        escapeCsv(r.id),
+        escapeCsv(profile?.fullName || r.name),
+        escapeCsv(profile?.phoneFormatted || (profile?.phone ? profile.phone : 'Não informado')),
+        escapeCsv(profile?.birthDate ? formatBirthDate(profile.birthDate) : 'Não informado'),
+        escapeCsv(profile?.birthDate ? getReaderDetailedAge(profile.birthDate) : 'Não informado'),
+        escapeCsv(profile?.gender || 'Não informado'),
+        escapeCsv(profile?.maritalStatus || 'Não informado'),
+        escapeCsv(statusText),
+        escapeCsv(r.hasProfile && profile ? 'Sim' : 'Pendente'),
+        escapeCsv(formatDate(r.createdAt)),
+        escapeCsv(r.lastUsedAt ? formatDate(r.lastUsedAt) : 'Ainda não acessou'),
+        escapeCsv(r.expiresAt ? formatDate(r.expiresAt) : 'Permanente'),
+        escapeCsv(r.notes || ''),
+      ].join(';');
+    });
+
+    // BOM UTF-8 (\uFEFF) para abrir com acentuação correta no Excel e Google Sheets
+    const csvContent = '\uFEFF' + [headers.join(';'), ...rows].join('\r\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    const today = new Date().toISOString().split('T')[0];
+    link.href = url;
+    link.setAttribute('download', `relatorio_leitores_biblioteca_digital_${today}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
+  const handlePrint = () => {
+    window.print();
+  };
+
   // 1. Tela de Carregamento Inicial
   if (isCheckingAuth) {
     return (
@@ -1130,11 +1284,25 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
               </div>
 
               {/* Cards de resumo rápido */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-5 pt-4 border-t border-stone-100 dark:border-zinc-800">
+              <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 mt-5 pt-4 border-t border-stone-100 dark:border-zinc-800">
                 <div className="p-3 rounded-xl bg-stone-50 dark:bg-zinc-800/50 border border-stone-200/50 dark:border-zinc-700/50">
-                  <span className="text-[11px] font-medium text-stone-500 dark:text-zinc-400 block">Total Cadastrado</span>
+                  <span className="text-[11px] font-medium text-stone-500 dark:text-zinc-400 block">Total de Acessos</span>
                   <span className="text-lg font-bold text-stone-900 dark:text-zinc-100 mt-0.5 block font-mono">
                     {readers.length}
+                  </span>
+                </div>
+
+                <div className="p-3 rounded-xl bg-sky-50/60 dark:bg-sky-950/20 border border-sky-200/60 dark:border-sky-900/30">
+                  <span className="text-[11px] font-medium text-sky-700 dark:text-sky-400 block">Cadastrados</span>
+                  <span className="text-lg font-bold text-sky-700 dark:text-sky-300 mt-0.5 block font-mono">
+                    {readers.filter((r) => r.hasProfile && r.profile).length}
+                  </span>
+                </div>
+
+                <div className="p-3 rounded-xl bg-violet-50/60 dark:bg-violet-950/20 border border-violet-200/60 dark:border-violet-900/30">
+                  <span className="text-[11px] font-medium text-violet-700 dark:text-violet-400 block">Aguardando Cadastro</span>
+                  <span className="text-lg font-bold text-violet-700 dark:text-violet-300 mt-0.5 block font-mono">
+                    {readers.filter((r) => !r.hasProfile || !r.profile).length}
                   </span>
                 </div>
 
@@ -1146,17 +1314,80 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                 </div>
 
                 <div className="p-3 rounded-xl bg-amber-50/50 dark:bg-amber-950/20 border border-amber-200/50 dark:border-amber-900/30">
-                  <span className="text-[11px] font-medium text-amber-700 dark:text-amber-400 block">Bloqueados</span>
+                  <span className="text-[11px] font-medium text-amber-700 dark:text-amber-400 block">Bloqueados / Revogados</span>
                   <span className="text-lg font-bold text-amber-700 dark:text-amber-300 mt-0.5 block font-mono">
-                    {readers.filter((r) => r.status === 'blocked').length}
+                    {readers.filter((r) => r.status === 'blocked' || r.status === 'revoked').length}
                   </span>
                 </div>
+              </div>
 
-                <div className="p-3 rounded-xl bg-rose-50/50 dark:bg-rose-950/20 border border-rose-200/50 dark:border-rose-900/30">
-                  <span className="text-[11px] font-medium text-rose-700 dark:text-rose-400 block">Revogados</span>
-                  <span className="text-lg font-bold text-rose-700 dark:text-rose-300 mt-0.5 block font-mono">
-                    {readers.filter((r) => r.status === 'revoked').length}
-                  </span>
+              {/* Status e Sincronização com o Firebase Cloud Firestore */}
+              <div
+                className={`mt-4 p-3.5 sm:p-4 rounded-xl border flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs ${
+                  firebaseStatus?.isConnected
+                    ? isDark
+                      ? 'bg-emerald-950/20 border-emerald-800/40 text-emerald-200'
+                      : 'bg-emerald-50/70 border-emerald-200 text-emerald-900'
+                    : isDark
+                      ? 'bg-zinc-800/50 border-zinc-700 text-zinc-300'
+                      : 'bg-stone-50 border-stone-200 text-stone-700'
+                }`}
+              >
+                <div className="flex items-start sm:items-center gap-2.5">
+                  <div
+                    className={`p-2 rounded-lg shrink-0 ${
+                      firebaseStatus?.isConnected
+                        ? isDark
+                          ? 'bg-emerald-500/20 text-emerald-400'
+                          : 'bg-emerald-100 text-emerald-700'
+                        : 'bg-stone-200 text-stone-600'
+                    }`}
+                  >
+                    <Database className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-semibold text-[13px] text-stone-900 dark:text-zinc-100 flex items-center gap-1.5">
+                        Banco de Dados: Firebase Cloud Firestore
+                        <span
+                          className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium ${
+                            firebaseStatus?.isConnected
+                              ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300'
+                              : 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300'
+                          }`}
+                        >
+                          <span
+                            className={`w-1.5 h-1.5 rounded-full ${
+                              firebaseStatus?.isConnected ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'
+                            }`}
+                          />
+                          {firebaseStatus?.isConnected ? 'Persistência em Nuvem Conectada' : 'Contingência Local'}
+                        </span>
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-stone-500 dark:text-zinc-400 mt-0.5">
+                      {firebaseStatus?.isConnected
+                        ? `Projeto: ${firebaseStatus.projectId} • Banco: ${firebaseStatus.databaseId} • ${
+                            firebaseStatus.totalReadersInFirestore !== undefined
+                              ? `${firebaseStatus.totalReadersInFirestore} leitores sincronizados em nuvem`
+                              : 'Conectado em nuvem'
+                          }`
+                        : 'Os dados estão preservados no backup local. Conecte ao Firebase para sincronizar em nuvem.'}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    type="button"
+                    onClick={handleMigrateFirebase}
+                    disabled={isMigratingFirebase}
+                    className="px-3 py-1.5 rounded-lg text-xs font-semibold border border-emerald-300 dark:border-emerald-700/60 text-emerald-800 dark:text-emerald-300 hover:bg-emerald-100/60 dark:hover:bg-emerald-900/30 transition-colors flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                    title="Forçar sincronização de todos os acessos locais para o Firebase Firestore"
+                  >
+                    <RefreshCw className={`w-3 h-3 ${isMigratingFirebase ? 'animate-spin' : ''}`} />
+                    <span>{isMigratingFirebase ? 'Sincronizando...' : 'Sincronizar Nuvem'}</span>
+                  </button>
                 </div>
               </div>
             </div>
@@ -1348,17 +1579,20 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                 isDark ? 'bg-zinc-900/80 border-zinc-800' : 'bg-white border-stone-200 shadow-xs'
               }`}
             >
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-5 pb-4 border-b border-stone-100 dark:border-zinc-800">
+              <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 mb-5 pb-4 border-b border-stone-100 dark:border-zinc-800">
                 <div>
-                  <h3 className="text-base font-serif font-bold text-stone-900 dark:text-zinc-50">
-                    Acessos Cadastrados ({readers.length})
+                  <h3 className="text-base font-serif font-bold text-stone-900 dark:text-zinc-50 flex items-center gap-2">
+                    <span>Planilha de Acessos dos Leitores</span>
+                    <span className="px-2 py-0.5 rounded-full text-xs font-mono font-bold bg-amber-500/15 text-amber-700 dark:text-amber-400">
+                      {readers.length}
+                    </span>
                   </h3>
                   <p className="text-xs text-stone-500 dark:text-zinc-400 font-sans mt-0.5">
-                    Gerencie o estado de cada leitor. Bloqueios e revogações têm efeito imediato.
+                    Planilha completa com dados pessoais, WhatsApp, nascimento, idade calculada e estado de acesso.
                   </p>
                 </div>
 
-                {/* Filtros e Busca */}
+                {/* Filtros, Busca e Exportação */}
                 <div className="flex flex-wrap items-center gap-2">
                   <div className="relative">
                     <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-stone-400" />
@@ -1366,7 +1600,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                       type="text"
                       value={searchTerm}
                       onChange={(e) => setSearchTerm(e.target.value)}
-                      placeholder="Buscar por nome..."
+                      placeholder="Buscar por nome ou WhatsApp..."
                       className={`pl-8 pr-3 py-1.5 rounded-xl text-xs border transition-colors outline-hidden ${
                         isDark
                           ? 'bg-zinc-800 border-zinc-700 text-zinc-100 placeholder:text-zinc-500'
@@ -1375,6 +1609,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                     />
                   </div>
 
+                  {/* Filtro por Estado do PIN */}
                   <select
                     value={statusFilter}
                     onChange={(e: any) => setStatusFilter(e.target.value)}
@@ -1389,14 +1624,60 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                     <option value="blocked">Apenas Bloqueados</option>
                     <option value="revoked">Apenas Revogados</option>
                   </select>
+
+                  {/* Filtro por Cadastro Concluído */}
+                  <select
+                    value={registrationFilter}
+                    onChange={(e: any) => setRegistrationFilter(e.target.value)}
+                    className={`px-3 py-1.5 rounded-xl text-xs border transition-colors outline-hidden cursor-pointer ${
+                      isDark
+                        ? 'bg-zinc-800 border-zinc-700 text-zinc-100'
+                        : 'bg-stone-50 border-stone-300 text-stone-900'
+                    }`}
+                  >
+                    <option value="all">Todos os Cadastros</option>
+                    <option value="registered">Cadastrados (Com Perfil)</option>
+                    <option value="pending">Aguardando Cadastro</option>
+                  </select>
+
+                  {/* Botão Exportar Planilha (CSV) */}
+                  <button
+                    type="button"
+                    onClick={handleExportCSV}
+                    disabled={readers.length === 0}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-semibold border transition-colors flex items-center gap-1.5 cursor-pointer shadow-2xs ${
+                      isDark
+                        ? 'border-emerald-800/80 bg-emerald-950/30 text-emerald-300 hover:bg-emerald-900/40'
+                        : 'border-emerald-300 bg-emerald-50 text-emerald-800 hover:bg-emerald-100'
+                    }`}
+                    title="Exportar dados para planilha Excel / Google Sheets em CSV"
+                  >
+                    <FileSpreadsheet className="w-3.5 h-3.5" />
+                    <span>Exportar CSV</span>
+                  </button>
+
+                  {/* Botão Imprimir / Relatório */}
+                  <button
+                    type="button"
+                    onClick={handlePrint}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-semibold border transition-colors flex items-center gap-1.5 cursor-pointer ${
+                      isDark
+                        ? 'border-zinc-700 bg-zinc-800 text-zinc-200 hover:bg-zinc-700'
+                        : 'border-stone-200 bg-stone-100 text-stone-700 hover:bg-stone-200'
+                    }`}
+                    title="Imprimir relatório da planilha"
+                  >
+                    <Printer className="w-3.5 h-3.5" />
+                    <span className="hidden sm:inline">Imprimir</span>
+                  </button>
                 </div>
               </div>
 
-              {/* Tabela / Lista de Leitores */}
+              {/* Tabela / Planilha Administrativa de Leitores */}
               {isLoadingReaders ? (
                 <div className="py-12 flex flex-col items-center justify-center gap-2 text-stone-400">
                   <Loader2 className="w-6 h-6 animate-spin text-amber-500" />
-                  <span className="text-xs font-serif italic">Carregando acessos dos leitores...</span>
+                  <span className="text-xs font-serif italic">Carregando planilha dos leitores...</span>
                 </div>
               ) : readers.length === 0 ? (
                 <div className="py-12 text-center text-stone-400 dark:text-zinc-500">
@@ -1407,37 +1688,59 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                   </p>
                 </div>
               ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left text-xs">
+                <div className="overflow-x-auto rounded-xl border border-stone-200/80 dark:border-zinc-800">
+                  <table className="w-full text-left text-xs min-w-[950px]">
                     <thead>
-                      <tr className="border-b border-stone-200 dark:border-zinc-800 text-stone-500 dark:text-zinc-400 uppercase tracking-wider text-[10px]">
-                        <th className="py-3 px-3">Identificação / Leitor</th>
-                        <th className="py-3 px-3">Estado</th>
-                        <th className="py-3 px-3">Data de Criação</th>
-                        <th className="py-3 px-3">Validade / Expiração</th>
-                        <th className="py-3 px-3">Último Acesso</th>
+                      <tr className="border-b border-stone-200 dark:border-zinc-800 bg-stone-50/75 dark:bg-zinc-800/40 text-stone-500 dark:text-zinc-400 uppercase tracking-wider text-[10px]">
+                        <th className="py-3 px-3.5">Nome Completo (Formatado)</th>
+                        <th className="py-3 px-3">WhatsApp / Celular</th>
+                        <th className="py-3 px-3">Nascimento</th>
+                        <th className="py-3 px-3">Idade Calculada</th>
+                        <th className="py-3 px-3">Sexo & Estado Civil</th>
+                        <th className="py-3 px-3">Status do PIN</th>
+                        <th className="py-3 px-3">Data de Cadastro</th>
                         <th className="py-3 px-3 text-right">Ações</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-stone-100 dark:divide-zinc-800/60">
                       {readers
                         .filter((r) => {
+                          const q = searchTerm.trim().toLowerCase();
+                          const fullNameMatch = r.profile?.fullName?.toLowerCase().includes(q);
+                          const nameMatch = r.name.toLowerCase().includes(q);
+                          const phoneMatch =
+                            r.profile?.phone?.includes(q) ||
+                            r.profile?.phoneFormatted?.includes(q);
+                          const notesMatch = r.notes && r.notes.toLowerCase().includes(q);
                           const matchesSearch =
-                            !searchTerm.trim() ||
-                            r.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                            (r.notes && r.notes.toLowerCase().includes(searchTerm.toLowerCase()));
-                          const matchesStatus = statusFilter === 'all' || r.status === statusFilter;
-                          return matchesSearch && matchesStatus;
+                            !q || fullNameMatch || nameMatch || phoneMatch || notesMatch;
+
+                          const matchesStatus =
+                            statusFilter === 'all' || r.status === statusFilter;
+
+                          const matchesReg =
+                            registrationFilter === 'all'
+                              ? true
+                              : registrationFilter === 'registered'
+                              ? Boolean(r.hasProfile && r.profile)
+                              : !r.hasProfile || !r.profile;
+
+                          return matchesSearch && matchesStatus && matchesReg;
                         })
                         .map((reader) => {
                           const isExpired =
                             reader.expiresAt && new Date(reader.expiresAt).getTime() < Date.now();
+                          const profile = reader.profile;
+                          const displayName = profile?.fullName || reader.name;
+                          const phoneDigits = profile?.phone
+                            ? profile.phone.replace(/\D/g, '')
+                            : '';
 
                           return (
                             <tr
                               key={reader.id}
                               className={`transition-colors ${
-                                isDark ? 'hover:bg-zinc-800/40' : 'hover:bg-stone-50/70'
+                                isDark ? 'hover:bg-zinc-800/40' : 'hover:bg-stone-50/80'
                               } ${
                                 reader.status === 'blocked'
                                   ? 'opacity-70 bg-amber-500/5'
@@ -1446,10 +1749,23 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                                   : ''
                               }`}
                             >
-                              {/* Nome e Notas */}
-                              <td className="py-3.5 px-3">
-                                <div className="font-semibold text-stone-900 dark:text-zinc-100 text-sm">
-                                  {reader.name}
+                              {/* 1. Nome Completo e Badge de Cadastro */}
+                              <td className="py-3.5 px-3.5">
+                                <div className="flex items-center gap-2">
+                                  <span className="font-semibold text-stone-900 dark:text-zinc-100 text-sm">
+                                    {displayName}
+                                  </span>
+                                  {reader.hasProfile && profile ? (
+                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-sky-100 text-sky-800 dark:bg-sky-950/70 dark:text-sky-300">
+                                      <CheckCircle2 className="w-2.5 h-2.5" />
+                                      Cadastrado
+                                    </span>
+                                  ) : (
+                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-100 text-amber-800 dark:bg-amber-950/70 dark:text-amber-300">
+                                      <Clock className="w-2.5 h-2.5" />
+                                      Aguardando PIN
+                                    </span>
+                                  )}
                                 </div>
                                 {reader.notes && (
                                   <div className="text-[11px] text-stone-500 dark:text-zinc-400 italic mt-0.5">
@@ -1458,7 +1774,76 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                                 )}
                               </td>
 
-                              {/* Estado do Acesso */}
+                              {/* 2. WhatsApp / Celular */}
+                              <td className="py-3.5 px-3 whitespace-nowrap">
+                                {profile?.phoneFormatted ? (
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="font-mono text-stone-800 dark:text-zinc-200 text-xs">
+                                      {profile.phoneFormatted}
+                                    </span>
+                                    {phoneDigits && (
+                                      <a
+                                        href={`https://wa.me/55${phoneDigits}`}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="p-1 rounded-md text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950/50 transition-colors"
+                                        title={`Abrir conversa no WhatsApp com ${displayName}`}
+                                      >
+                                        <MessageCircle className="w-3.5 h-3.5" />
+                                      </a>
+                                    )}
+                                  </div>
+                                ) : (
+                                  <span className="text-stone-400 dark:text-zinc-500 italic text-[11px]">
+                                    Pendente
+                                  </span>
+                                )}
+                              </td>
+
+                              {/* 3. Data de Nascimento */}
+                              <td className="py-3.5 px-3 whitespace-nowrap text-[11px] text-stone-700 dark:text-zinc-300">
+                                {profile?.birthDate ? (
+                                  <span className="font-mono">
+                                    {formatBirthDate(profile.birthDate)}
+                                  </span>
+                                ) : (
+                                  <span className="text-stone-400 dark:text-zinc-500 italic">
+                                    -
+                                  </span>
+                                )}
+                              </td>
+
+                              {/* 4. Idade Calculada */}
+                              <td className="py-3.5 px-3 text-[11px] text-stone-700 dark:text-zinc-300">
+                                {profile?.birthDate ? (
+                                  <span className="font-medium">
+                                    {getReaderDetailedAge(profile.birthDate)}
+                                  </span>
+                                ) : (
+                                  <span className="text-stone-400 dark:text-zinc-500 italic">
+                                    -
+                                  </span>
+                                )}
+                              </td>
+
+                              {/* 5. Sexo & Estado Civil */}
+                              <td className="py-3.5 px-3 whitespace-nowrap text-[11px] text-stone-600 dark:text-zinc-300">
+                                {profile ? (
+                                  <div>
+                                    <span className="font-medium text-stone-800 dark:text-zinc-200">
+                                      {profile.gender}
+                                    </span>
+                                    <span className="text-stone-400 mx-1">•</span>
+                                    <span>{profile.maritalStatus}</span>
+                                  </div>
+                                ) : (
+                                  <span className="text-stone-400 dark:text-zinc-500 italic">
+                                    -
+                                  </span>
+                                )}
+                              </td>
+
+                              {/* 6. Status do PIN */}
                               <td className="py-3.5 px-3 whitespace-nowrap">
                                 {reader.status === 'active' ? (
                                   isExpired ? (
@@ -1485,34 +1870,24 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                                 )}
                               </td>
 
-                              {/* Data de Criação */}
+                              {/* 7. Data de Cadastro / Criação */}
                               <td className="py-3.5 px-3 text-stone-600 dark:text-zinc-300 whitespace-nowrap font-mono text-[11px]">
-                                {formatDate(reader.createdAt)}
+                                {formatDate(profile?.registeredAt || reader.createdAt)}
                               </td>
 
-                              {/* Validade */}
-                              <td className="py-3.5 px-3 text-stone-600 dark:text-zinc-300 whitespace-nowrap text-[11px]">
-                                {reader.expiresAt ? (
-                                  <span className={isExpired ? 'text-rose-600 font-bold' : ''}>
-                                    {formatDate(reader.expiresAt)}
-                                  </span>
-                                ) : (
-                                  <span className="text-stone-400 dark:text-zinc-500 italic">Permanente</span>
-                                )}
-                              </td>
-
-                              {/* Último Uso */}
-                              <td className="py-3.5 px-3 text-stone-600 dark:text-zinc-300 whitespace-nowrap text-[11px]">
-                                {reader.lastUsedAt ? (
-                                  formatDate(reader.lastUsedAt)
-                                ) : (
-                                  <span className="text-stone-400 dark:text-zinc-500 italic">Ainda não acessou</span>
-                                )}
-                              </td>
-
-                              {/* Botões de Ação */}
+                              {/* 8. Botões de Ação */}
                               <td className="py-3.5 px-3 text-right whitespace-nowrap">
                                 <div className="inline-flex items-center gap-1">
+                                  {/* Botão Ver Ficha / Detalhes */}
+                                  <button
+                                    type="button"
+                                    onClick={() => setSelectedReaderDetails(reader)}
+                                    className="p-1.5 rounded-lg text-sky-600 dark:text-sky-400 hover:bg-sky-50 dark:hover:bg-sky-950/40 transition-colors cursor-pointer"
+                                    title="Ver ficha cadastral completa deste leitor"
+                                  >
+                                    <Eye className="w-4 h-4" />
+                                  </button>
+
                                   {/* Botão Bloquear / Desbloquear */}
                                   {reader.status === 'active' ? (
                                     <button
@@ -2064,6 +2439,91 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
               </div>
             </div>
 
+            {/* STATUS E CONFIGURAÇÃO DO BANCO DE DADOS FIREBASE CLOUD FIRESTORE */}
+            <div
+              className={`p-6 rounded-2xl border transition-all ${
+                isDark ? 'bg-zinc-900/80 border-zinc-800' : 'bg-white border-stone-200 shadow-xs'
+              }`}
+            >
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-stone-100 dark:border-zinc-800">
+                <div>
+                  <h2 className="text-base font-serif font-bold text-stone-900 dark:text-zinc-50 flex items-center gap-2">
+                    <Database className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                    Persistência: Firebase Cloud Firestore
+                  </h2>
+                  <p className="text-xs text-stone-500 dark:text-zinc-400 font-sans mt-0.5">
+                    Banco de dados relacional e escalável em nuvem para sobrevivência a reinicializações e novas implantações.
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <span
+                    className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold ${
+                      firebaseStatus?.isConnected
+                        ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300'
+                        : 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300'
+                    }`}
+                  >
+                    <span
+                      className={`w-2 h-2 rounded-full ${
+                        firebaseStatus?.isConnected ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'
+                      }`}
+                    />
+                    {firebaseStatus?.isConnected ? 'Conectado à Nuvem' : 'Contingência Local'}
+                  </span>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5 mt-4">
+                <div className="p-3.5 rounded-xl bg-stone-50 dark:bg-zinc-800/60 border border-stone-200/60 dark:border-zinc-700/60">
+                  <span className="text-[11px] font-medium text-stone-500 dark:text-zinc-400 block mb-1">
+                    Projeto Firebase
+                  </span>
+                  <span className="text-xs font-mono font-semibold text-stone-900 dark:text-zinc-100 block truncate">
+                    {firebaseStatus?.projectId || 'Não configurado'}
+                  </span>
+                </div>
+
+                <div className="p-3.5 rounded-xl bg-stone-50 dark:bg-zinc-800/60 border border-stone-200/60 dark:border-zinc-700/60">
+                  <span className="text-[11px] font-medium text-stone-500 dark:text-zinc-400 block mb-1">
+                    ID do Banco de Dados
+                  </span>
+                  <span className="text-xs font-mono font-semibold text-stone-900 dark:text-zinc-100 block truncate">
+                    {firebaseStatus?.databaseId || '(default)'}
+                  </span>
+                </div>
+
+                <div className="p-3.5 rounded-xl bg-stone-50 dark:bg-zinc-800/60 border border-stone-200/60 dark:border-zinc-700/60">
+                  <span className="text-[11px] font-medium text-stone-500 dark:text-zinc-400 block mb-1">
+                    Cópia de Backup Local
+                  </span>
+                  <span className="text-xs font-medium text-emerald-700 dark:text-emerald-400 flex items-center gap-1">
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    Ativa (<code className="font-mono text-[10px]">security-config.backup.json</code>)
+                  </span>
+                </div>
+              </div>
+
+              <div className="mt-4 pt-4 border-t border-stone-100 dark:border-zinc-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-stone-500 dark:text-zinc-400">
+                <div className="flex items-center gap-2">
+                  <Info className="w-4 h-4 shrink-0 text-amber-600 dark:text-amber-400" />
+                  <span>
+                    Coleções sincronizadas: <strong className="text-stone-800 dark:text-zinc-200">/reader_accesses</strong> (acessos e cadastros de leitores) e <strong className="text-stone-800 dark:text-zinc-200">/system_config</strong> (travas e parâmetros).
+                  </span>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleMigrateFirebase}
+                  disabled={isMigratingFirebase}
+                  className="px-3.5 py-2 rounded-xl text-xs font-semibold bg-stone-900 dark:bg-zinc-100 text-stone-50 dark:text-zinc-900 hover:bg-stone-800 dark:hover:bg-white transition-colors flex items-center justify-center gap-2 cursor-pointer shrink-0 disabled:opacity-50"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${isMigratingFirebase ? 'animate-spin' : ''}`} />
+                  <span>{isMigratingFirebase ? 'Sincronizando...' : 'Forçar Sincronização em Nuvem'}</span>
+                </button>
+              </div>
+            </div>
+
             {/* 2. ALTERAÇÃO DO PIN DOS LEITORES */}
             <div
               className={`p-6 rounded-2xl border transition-all ${
@@ -2483,6 +2943,232 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                 }`}
               >
                 {confirmModal.confirmText}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL DE FICHA CADASTRAL DETALHADA DO LEITOR */}
+      {selectedReaderDetails && (
+        <div
+          className="fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-200"
+          role="dialog"
+          aria-modal="true"
+        >
+          <div
+            className={`max-w-lg w-full p-6 sm:p-7 rounded-3xl border shadow-2xl relative animate-in zoom-in-95 duration-150 max-h-[90vh] overflow-y-auto ${
+              isDark ? 'bg-zinc-900 border-zinc-700 text-zinc-100' : 'bg-white border-stone-200 text-stone-900'
+            }`}
+          >
+            {/* Cabeçalho da Modal */}
+            <div className="flex items-start justify-between gap-3 mb-5 pb-4 border-b border-stone-100 dark:border-zinc-800">
+              <div className="flex items-center gap-3">
+                <div className="w-11 h-11 rounded-2xl bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
+                  <UserCheck className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-serif font-bold text-stone-900 dark:text-zinc-50 leading-tight">
+                    Ficha Cadastral do Leitor
+                  </h3>
+                  <p className="text-xs text-stone-500 dark:text-zinc-400 font-sans mt-0.5">
+                    ID Interno: <span className="font-mono">{selectedReaderDetails.id}</span>
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedReaderDetails(null)}
+                className="p-1.5 rounded-lg text-stone-400 hover:text-stone-700 dark:hover:text-zinc-200 hover:bg-stone-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer"
+                title="Fechar ficha"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Informações Pessoais */}
+            <div className="space-y-4 text-xs font-sans">
+              {/* Nome e Status */}
+              <div className="p-4 rounded-2xl bg-stone-50 dark:bg-zinc-800/50 border border-stone-200/60 dark:border-zinc-700/60">
+                <div className="flex items-center justify-between gap-2 mb-1.5">
+                  <span className="text-[11px] font-semibold uppercase tracking-wider text-stone-400 dark:text-zinc-400">
+                    Nome Completo Padronizado
+                  </span>
+                  {selectedReaderDetails.hasProfile && selectedReaderDetails.profile ? (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-sky-100 text-sky-800 dark:bg-sky-950/70 dark:text-sky-300">
+                      <CheckCircle2 className="w-3 h-3" />
+                      Cadastro Concluído
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 dark:bg-amber-950/70 dark:text-amber-300">
+                      <Clock className="w-3 h-3" />
+                      Aguardando Primeiro Acesso
+                    </span>
+                  )}
+                </div>
+                <div className="text-base font-serif font-bold text-stone-900 dark:text-zinc-100">
+                  {selectedReaderDetails.profile?.fullName || selectedReaderDetails.name}
+                </div>
+              </div>
+
+              {/* Contato WhatsApp */}
+              <div className="p-4 rounded-2xl bg-stone-50 dark:bg-zinc-800/50 border border-stone-200/60 dark:border-zinc-700/60">
+                <span className="text-[11px] font-semibold uppercase tracking-wider text-stone-400 dark:text-zinc-400 block mb-2">
+                  Telefone Celular (WhatsApp)
+                </span>
+                {selectedReaderDetails.profile?.phoneFormatted ? (
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-sm font-mono font-bold text-stone-900 dark:text-zinc-100">
+                      {selectedReaderDetails.profile.phoneFormatted}
+                    </span>
+                    <a
+                      href={`https://wa.me/55${selectedReaderDetails.profile.phone.replace(/\D/g, '')}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs shadow-xs transition-colors"
+                    >
+                      <MessageCircle className="w-3.5 h-3.5" />
+                      <span>Conversar no WhatsApp</span>
+                    </a>
+                  </div>
+                ) : (
+                  <span className="text-stone-400 dark:text-zinc-500 italic">
+                    Telefone ainda não cadastrado pelo leitor.
+                  </span>
+                )}
+              </div>
+
+              {/* Data de Nascimento & Idade Calculada */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="p-3.5 rounded-2xl bg-stone-50 dark:bg-zinc-800/50 border border-stone-200/60 dark:border-zinc-700/60">
+                  <span className="text-[11px] font-semibold uppercase tracking-wider text-stone-400 dark:text-zinc-400 block mb-1">
+                    Data de Nascimento
+                  </span>
+                  <span className="text-sm font-mono font-bold text-stone-900 dark:text-zinc-100 block">
+                    {selectedReaderDetails.profile?.birthDate
+                      ? formatBirthDate(selectedReaderDetails.profile.birthDate)
+                      : 'Não informado'}
+                  </span>
+                </div>
+
+                <div className="p-3.5 rounded-2xl bg-amber-50/50 dark:bg-amber-950/20 border border-amber-200/60 dark:border-amber-900/40">
+                  <span className="text-[11px] font-semibold uppercase tracking-wider text-amber-800 dark:text-amber-300 block mb-1">
+                    Idade Calculada
+                  </span>
+                  <span className="text-xs font-bold text-amber-900 dark:text-amber-200 block">
+                    {selectedReaderDetails.profile?.birthDate
+                      ? getReaderDetailedAge(selectedReaderDetails.profile.birthDate)
+                      : 'Não calculada'}
+                  </span>
+                </div>
+              </div>
+
+              {/* Sexo e Estado Civil */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="p-3.5 rounded-2xl bg-stone-50 dark:bg-zinc-800/50 border border-stone-200/60 dark:border-zinc-700/60">
+                  <span className="text-[11px] font-semibold uppercase tracking-wider text-stone-400 dark:text-zinc-400 block mb-1">
+                    Sexo
+                  </span>
+                  <span className="text-xs font-semibold text-stone-800 dark:text-zinc-200 block">
+                    {selectedReaderDetails.profile?.gender || 'Não informado'}
+                  </span>
+                </div>
+
+                <div className="p-3.5 rounded-2xl bg-stone-50 dark:bg-zinc-800/50 border border-stone-200/60 dark:border-zinc-700/60">
+                  <span className="text-[11px] font-semibold uppercase tracking-wider text-stone-400 dark:text-zinc-400 block mb-1">
+                    Estado Civil
+                  </span>
+                  <span className="text-xs font-semibold text-stone-800 dark:text-zinc-200 block">
+                    {selectedReaderDetails.profile?.maritalStatus || 'Não informado'}
+                  </span>
+                </div>
+              </div>
+
+              {/* Histórico e Validade */}
+              <div className="p-3.5 rounded-2xl bg-stone-50 dark:bg-zinc-800/50 border border-stone-200/60 dark:border-zinc-700/60 space-y-2">
+                <div className="flex justify-between items-center text-[11px]">
+                  <span className="text-stone-500 dark:text-zinc-400">PIN Criado Em:</span>
+                  <span className="font-mono text-stone-800 dark:text-zinc-200">{formatDate(selectedReaderDetails.createdAt)}</span>
+                </div>
+                {selectedReaderDetails.profile?.registeredAt && (
+                  <div className="flex justify-between items-center text-[11px]">
+                    <span className="text-stone-500 dark:text-zinc-400">Cadastro Pessoal Em:</span>
+                    <span className="font-mono text-stone-800 dark:text-zinc-200">{formatDate(selectedReaderDetails.profile.registeredAt)}</span>
+                  </div>
+                )}
+                <div className="flex justify-between items-center text-[11px]">
+                  <span className="text-stone-500 dark:text-zinc-400">Último Acesso à Biblioteca:</span>
+                  <span className="font-mono text-stone-800 dark:text-zinc-200">
+                    {selectedReaderDetails.lastUsedAt ? formatDate(selectedReaderDetails.lastUsedAt) : 'Ainda não acessou'}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center text-[11px]">
+                  <span className="text-stone-500 dark:text-zinc-400">Validade do Acesso:</span>
+                  <span className="font-mono text-stone-800 dark:text-zinc-200">
+                    {selectedReaderDetails.expiresAt ? formatDate(selectedReaderDetails.expiresAt) : 'Permanente'}
+                  </span>
+                </div>
+                {selectedReaderDetails.notes && (
+                  <div className="pt-2 border-t border-stone-200/60 dark:border-zinc-700/60">
+                    <span className="text-[11px] font-semibold text-stone-500 dark:text-zinc-400 block mb-0.5">
+                      Observações Administrativas:
+                    </span>
+                    <p className="italic text-stone-600 dark:text-zinc-300">{selectedReaderDetails.notes}</p>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Rodapé da Modal com Ações Rápidas */}
+            <div className="flex items-center justify-between gap-3 pt-5 mt-5 border-t border-stone-100 dark:border-zinc-800">
+              <div className="flex items-center gap-2">
+                {selectedReaderDetails.status === 'active' ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const target = selectedReaderDetails;
+                      setSelectedReaderDetails(null);
+                      handleUpdateReaderStatus(target, 'blocked');
+                    }}
+                    className="px-3 py-2 rounded-xl text-xs font-semibold bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-900/50 transition-colors cursor-pointer"
+                  >
+                    Bloquear Acesso
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const target = selectedReaderDetails;
+                      setSelectedReaderDetails(null);
+                      handleUpdateReaderStatus(target, 'active');
+                    }}
+                    className="px-3 py-2 rounded-xl text-xs font-semibold bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-900/50 transition-colors cursor-pointer"
+                  >
+                    Reativar Acesso
+                  </button>
+                )}
+
+                {selectedReaderDetails.status !== 'revoked' && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const target = selectedReaderDetails;
+                      setSelectedReaderDetails(null);
+                      handleUpdateReaderStatus(target, 'revoked');
+                    }}
+                    className="px-3 py-2 rounded-xl text-xs font-semibold bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-900/50 transition-colors cursor-pointer"
+                  >
+                    Revogar PIN
+                  </button>
+                )}
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setSelectedReaderDetails(null)}
+                className="px-4 py-2 rounded-xl text-xs font-semibold bg-stone-900 hover:bg-stone-800 text-white dark:bg-zinc-800 dark:hover:bg-zinc-700 transition-colors cursor-pointer"
+              >
+                Fechar
               </button>
             </div>
           </div>

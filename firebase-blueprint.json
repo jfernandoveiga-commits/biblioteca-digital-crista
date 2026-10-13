@@ -1,0 +1,159 @@
+{
+  "entities": {
+    "ReaderAccess": {
+      "title": "ReaderAccess",
+      "description": "Controle de acesso individual por PIN de leitor na Biblioteca Digital",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Identificador interno exclusivo do acesso"
+        },
+        "name": {
+          "type": "string",
+          "description": "Nome de exibição ou identificador inicial do leitor"
+        },
+        "pinHash": {
+          "type": "string",
+          "description": "Hash PBKDF2 irreversível do PIN"
+        },
+        "pinSalt": {
+          "type": "string",
+          "description": "Salt criptográfico individual"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["active", "blocked", "revoked"],
+          "description": "Estado do acesso"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Data de emissão do PIN"
+        },
+        "expiresAt": {
+          "type": "string",
+          "description": "Data de expiração opcional"
+        },
+        "lastUsedAt": {
+          "type": "string",
+          "description": "Data do último acesso à biblioteca"
+        },
+        "notes": {
+          "type": "string",
+          "description": "Observações administrativas"
+        },
+        "hasProfile": {
+          "type": "boolean",
+          "description": "Indica se o cadastro de primeiro acesso foi concluído"
+        },
+        "profile": {
+          "type": "object",
+          "description": "Dados cadastrais pessoais do leitor vinculados ao ID do PIN"
+        }
+      },
+      "required": ["id", "name", "pinHash", "pinSalt", "status", "createdAt"]
+    },
+    "ReaderProfile": {
+      "title": "ReaderProfile",
+      "description": "Dados cadastrais pessoais do leitor informados no primeiro acesso",
+      "type": "object",
+      "properties": {
+        "fullName": {
+          "type": "string",
+          "description": "Nome completo formatado com partículas e acentos"
+        },
+        "phone": {
+          "type": "string",
+          "description": "Dígitos normalizados do telefone com DDD"
+        },
+        "phoneFormatted": {
+          "type": "string",
+          "description": "Telefone celular no padrão brasileiro (XX) 9XXXX-XXXX"
+        },
+        "birthDate": {
+          "type": "string",
+          "format": "date",
+          "description": "Data de nascimento YYYY-MM-DD"
+        },
+        "gender": {
+          "type": "string",
+          "enum": ["Feminino", "Masculino", "Prefiro não informar"],
+          "description": "Sexo do leitor"
+        },
+        "maritalStatus": {
+          "type": "string",
+          "enum": [
+            "Solteiro(a)",
+            "Casado(a)",
+            "União estável",
+            "Separado(a)",
+            "Divorciado(a)",
+            "Viúvo(a)",
+            "Prefiro não informar"
+          ],
+          "description": "Estado civil"
+        },
+        "registeredAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Data de conclusão do cadastro"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Data da última atualização"
+        }
+      },
+      "required": ["fullName", "phone", "birthDate", "gender", "maritalStatus"]
+    },
+    "SystemSecurityConfig": {
+      "title": "SystemSecurityConfig",
+      "description": "Configurações globais de segurança e disponibilidade da biblioteca",
+      "type": "object",
+      "properties": {
+        "isLibraryLocked": {
+          "type": "boolean",
+          "description": "Trava global da biblioteca"
+        },
+        "lockReason": {
+          "type": "string",
+          "description": "Motivo da trava administrativa"
+        },
+        "lastPinChangedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "lastRevokedAt": {
+          "type": "string"
+        },
+        "sessionsRevokedBefore": {
+          "type": "number"
+        },
+        "features": {
+          "type": "object",
+          "description": "Funcionalidades ativas da biblioteca"
+        },
+        "contentAvailability": {
+          "type": "object",
+          "description": "Disponibilidade editorial de livros e capítulos"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["isLibraryLocked"]
+    }
+  },
+  "firestore": {
+    "/reader_accesses/{accessId}": {
+      "schema": "ReaderAccess",
+      "description": "Documentos de acesso e cadastros de leitores vinculados por identificador interno"
+    },
+    "/system_config/{configId}": {
+      "schema": "SystemSecurityConfig",
+      "description": "Configurações globais de segurança, recursos e disponibilidade editorial"
+    }
+  }
+}

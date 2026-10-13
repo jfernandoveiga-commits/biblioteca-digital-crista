@@ -593,7 +593,7 @@ export const ChapterReader: React.FC<ChapterReaderProps> = ({
                 <div className="inline-flex items-center gap-2 text-stone-600 dark:text-zinc-300 mb-2">
                   <BookOpen className="w-4 h-4 opacity-85 text-stone-500 dark:text-amber-400" />
                   <h2 className="text-xs sm:text-sm font-sans font-semibold tracking-[0.2em] uppercase">
-                    Textos Bíblicos para Leitura
+                    {chapter.biblicalTextsTitle || 'Textos Bíblicos para Leitura'}
                   </h2>
                 </div>
                 <div className="w-12 h-0.5 bg-stone-300 dark:bg-zinc-700 mx-auto mt-2" />

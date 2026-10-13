@@ -9,6 +9,8 @@ import {
   LibraryFeaturesConfig,
   ContentAvailabilityConfig,
   DEFAULT_LIBRARY_FEATURES,
+  ReaderProfile,
+  ReaderProfileUpdateInput,
 } from '../types/book';
 
 const SESSION_TOKEN_KEY = 'bib_session_token';
@@ -21,6 +23,10 @@ export interface VerifyPinResult {
   token?: string;
   expiresAt?: number;
   isLocked?: boolean;
+  accessId?: string;
+  readerName?: string;
+  hasProfile?: boolean;
+  readerProfile?: ReaderProfile | null;
 }
 
 export interface SessionStatus {
@@ -29,6 +35,10 @@ export interface SessionStatus {
   isLocked?: boolean;
   reason?: string;
   message?: string;
+  accessId?: string;
+  readerName?: string;
+  hasProfile?: boolean;
+  readerProfile?: ReaderProfile | null;
   features?: LibraryFeaturesConfig;
   contentAvailability?: ContentAvailabilityConfig;
 }
@@ -122,6 +132,10 @@ export const authService = {
           success: true,
           token: data.token,
           expiresAt: data.expiresAt,
+          accessId: data.accessId,
+          readerName: data.readerName,
+          hasProfile: data.hasProfile,
+          readerProfile: data.readerProfile,
         };
       }
 
@@ -138,6 +152,95 @@ export const authService = {
         success: false,
         error: 'Erro de conexão com o servidor. Verifique sua rede e tente novamente.',
       };
+    }
+  },
+
+  /**
+   * Conclui o cadastro pessoal do leitor no primeiro acesso
+   */
+  async registerProfile(
+    input: ReaderProfileUpdateInput
+  ): Promise<{
+    success: boolean;
+    profile?: ReaderProfile;
+    readerName?: string;
+    hasProfile?: boolean;
+    error?: string;
+  }> {
+    const token = this.getToken();
+    try {
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+      };
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
+      const response = await fetch('/api/auth/reader-profile', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(input),
+        credentials: 'include',
+      });
+
+      const data = await response.json();
+
+      if (response.ok && data.success) {
+        return {
+          success: true,
+          profile: data.profile,
+          readerName: data.readerName,
+          hasProfile: true,
+        };
+      }
+
+      return {
+        success: false,
+        error: data.error || 'Falha ao salvar dados cadastrais. Verifique os campos.',
+      };
+    } catch (err) {
+      console.error('[authService] Erro ao enviar cadastro do leitor:', err);
+      return {
+        success: false,
+        error: 'Erro de conexão ao salvar cadastro. Verifique sua rede e tente novamente.',
+      };
+    }
+  },
+
+  /**
+   * Consulta o perfil pessoal do próprio leitor autenticado
+   */
+  async getReaderProfile(): Promise<{
+    success: boolean;
+    profile?: ReaderProfile | null;
+    hasProfile?: boolean;
+    error?: string;
+  }> {
+    const token = this.getToken();
+    try {
+      const headers: Record<string, string> = {};
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
+      const response = await fetch('/api/auth/reader-profile', {
+        method: 'GET',
+        headers,
+        credentials: 'include',
+      });
+
+      const data = await response.json();
+      if (response.ok && data.success) {
+        return {
+          success: true,
+          profile: data.profile,
+          hasProfile: data.hasProfile,
+        };
+      }
+      return { success: false, error: data.error };
+    } catch (err) {
+      console.warn('[authService] Erro ao buscar perfil do leitor:', err);
+      return { success: false, error: 'Erro de rede ao carregar perfil.' };
     }
   },
 

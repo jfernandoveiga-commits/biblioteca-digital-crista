@@ -22,7 +22,8 @@ export interface Chapter {
   title: string;
   subtitle?: string;
   content: string[]; // Parágrafos integrais da narrativa
-  biblicalTexts?: BiblicalText[]; // Seção "Textos Bíblicos para Leitura"
+  biblicalTexts?: BiblicalText[]; // Seção "Textos Bíblicos para Leitura" ou "Referências Bíblicas"
+  biblicalTextsTitle?: string; // Título customizado da seção de textos bíblicos (ex: "Referências Bíblicas")
   reflectionQuestions?: string[]; // Seção "Perguntas para Reflexão" (1 a 10)
   estimatedReadingTimeMinutes?: number;
   status?: EditorialStatus;
@@ -97,14 +98,48 @@ export interface ContentAvailabilityConfig {
  */
 export type ReaderAccessStatus = 'active' | 'blocked' | 'revoked';
 
+export type ReaderGender = 'Feminino' | 'Masculino' | 'Prefiro não informar';
+
+export type ReaderMaritalStatus =
+  | 'Solteiro(a)'
+  | 'Casado(a)'
+  | 'União estável'
+  | 'Separado(a)'
+  | 'Divorciado(a)'
+  | 'Viúvo(a)'
+  | 'Prefiro não informar';
+
+export interface ReaderProfile {
+  fullName: string; // Nome completo padronizado
+  phone: string; // Dígitos normalizados com DDD (ex: "19981026699")
+  phoneFormatted: string; // Telefone formatado para exibição: "(19) 98102-6699"
+  birthDate: string; // YYYY-MM-DD
+  gender: ReaderGender;
+  maritalStatus: ReaderMaritalStatus;
+  registeredAt: string;
+  updatedAt: string;
+}
+
 export interface ReaderAccessRecord {
   id: string;
-  name: string; // Identificação do usuário / leitor
+  name: string; // Identificação inicial ou nome do leitor
+  pinHash?: string;
+  pinSalt?: string;
   status: ReaderAccessStatus;
   createdAt: string;
   expiresAt: string | null; // Data de expiração opcional
   lastUsedAt: string | null;
   notes?: string;
+  hasProfile?: boolean; // Indica se o leitor já concluiu o cadastro pessoal
+  profile?: ReaderProfile | null; // Dados cadastrais vinculados
+}
+
+export interface ReaderProfileUpdateInput {
+  fullName: string;
+  phone: string;
+  birthDate: string;
+  gender: ReaderGender;
+  maritalStatus: ReaderMaritalStatus;
 }
 
 export interface ReaderAccessCreateInput {
