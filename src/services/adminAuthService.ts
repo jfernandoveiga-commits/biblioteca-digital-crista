@@ -12,6 +12,7 @@ import {
   ReaderAccessCreateInput,
   ReaderAccessCreatedResult,
   ReaderAccessStatus,
+  ReaderContentPermissions,
 } from '../types/book';
 
 const ADMIN_TOKEN_KEY = 'bib_admin_session_token';
@@ -552,6 +553,45 @@ export const adminAuthService = {
     }
   },
 
+  async updateReaderPermissions(
+    id: string,
+    contentPermissions: ReaderContentPermissions
+  ): Promise<{
+    success: boolean;
+    access?: ReaderAccessRecord;
+    message?: string;
+    error?: string;
+  }> {
+    try {
+      const response = await fetch(`/api/admin/readers/${id}/permissions`, {
+        method: 'PUT',
+        headers: this.getAuthHeaders(),
+        body: JSON.stringify({ contentPermissions }),
+        credentials: 'include',
+      });
+
+      const data = await response.json();
+      if (!response.ok || !data.success) {
+        return {
+          success: false,
+          error: data.error || 'Falha ao atualizar permissões de conteúdo do leitor.',
+        };
+      }
+
+      return {
+        success: true,
+        access: data.access,
+        message: data.message,
+      };
+    } catch (err) {
+      console.error('[adminAuthService] Erro ao atualizar permissões do leitor:', err);
+      return {
+        success: false,
+        error: 'Erro de conexão ao atualizar permissões do leitor.',
+      };
+    }
+  },
+
   async deleteReaderAccess(
     id: string
   ): Promise<{
@@ -583,6 +623,85 @@ export const adminAuthService = {
       return {
         success: false,
         error: 'Erro de conexão ao excluir acesso.',
+      };
+    }
+  },
+
+  async resetReaderPin(
+    id: string,
+    options?: { pinMode?: 'auto' | 'manual'; customPin?: string }
+  ): Promise<{
+    success: boolean;
+    result?: ReaderAccessCreatedResult;
+    message?: string;
+    error?: string;
+  }> {
+    try {
+      const response = await fetch(`/api/admin/readers/${id}/reset-pin`, {
+        method: 'POST',
+        headers: this.getAuthHeaders(),
+        body: JSON.stringify(options || {}),
+        credentials: 'include',
+      });
+
+      const data = await response.json();
+      if (!response.ok || !data.success) {
+        return {
+          success: false,
+          error: data.error || 'Falha ao redefinir PIN do leitor.',
+        };
+      }
+
+      return {
+        success: true,
+        result: {
+          access: data.access,
+          pin: data.pin,
+        },
+        message: data.message,
+      };
+    } catch (err) {
+      console.error('[adminAuthService] Erro ao redefinir PIN do leitor:', err);
+      return {
+        success: false,
+        error: 'Erro de conexão ao redefinir PIN do leitor.',
+      };
+    }
+  },
+
+  async clearAllReaders(): Promise<{
+    success: boolean;
+    count?: number;
+    firestoreDeleted?: number;
+    message?: string;
+    error?: string;
+  }> {
+    try {
+      const response = await fetch('/api/admin/readers', {
+        method: 'DELETE',
+        headers: this.getAuthHeaders(),
+        credentials: 'include',
+      });
+
+      const data = await response.json();
+      if (!response.ok || !data.success) {
+        return {
+          success: false,
+          error: data.error || 'Falha ao limpar cadastros de leitores.',
+        };
+      }
+
+      return {
+        success: true,
+        count: data.count,
+        firestoreDeleted: data.firestoreDeleted,
+        message: data.message,
+      };
+    } catch (err) {
+      console.error('[adminAuthService] Erro ao limpar leitores:', err);
+      return {
+        success: false,
+        error: 'Erro de conexão ao limpar cadastros de leitores.',
       };
     }
   },

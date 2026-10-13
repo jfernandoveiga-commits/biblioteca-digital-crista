@@ -120,6 +120,15 @@ export interface ReaderProfile {
   updatedAt: string;
 }
 
+export interface ReaderBookPermission {
+  enabled: boolean; // true = Liberado, false = Bloqueado
+  chapters: Record<string, boolean>; // [chapterId]: true = Liberado, false = Bloqueado
+}
+
+export interface ReaderContentPermissions {
+  books: Record<string, ReaderBookPermission>;
+}
+
 export interface ReaderAccessRecord {
   id: string;
   name: string; // Identificação inicial ou nome do leitor
@@ -132,6 +141,7 @@ export interface ReaderAccessRecord {
   notes?: string;
   hasProfile?: boolean; // Indica se o leitor já concluiu o cadastro pessoal
   profile?: ReaderProfile | null; // Dados cadastrais vinculados
+  contentPermissions?: ReaderContentPermissions | null; // Gestão individual de Liberado/Bloqueado de livros e capítulos
 }
 
 export interface ReaderProfileUpdateInput {
@@ -148,6 +158,7 @@ export interface ReaderAccessCreateInput {
   customPin?: string;
   expiresAt?: string | null;
   notes?: string;
+  contentPermissions?: ReaderContentPermissions;
 }
 
 export interface ReaderAccessCreatedResult {

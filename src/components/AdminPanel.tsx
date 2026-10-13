@@ -49,6 +49,8 @@ import {
   Database,
   Cloud,
   Server,
+  CheckCheck,
+  Ban,
 } from 'lucide-react';
 import { adminAuthService, AdminSystemStatus } from '../services/adminAuthService';
 import {
@@ -59,6 +61,8 @@ import {
   Book,
   ReaderAccessRecord,
   ReaderAccessStatus,
+  ReaderContentPermissions,
+  ReaderBookPermission,
 } from '../types/book';
 import { libraryBooks } from '../data/booksCatalog';
 import { PWAInstallButton } from './PWAInstallButton';
@@ -111,6 +115,17 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const [registrationFilter, setRegistrationFilter] = useState<'all' | 'registered' | 'pending'>('all');
   const [selectedReaderDetails, setSelectedReaderDetails] = useState<ReaderAccessRecord | null>(null);
 
+  // Permissões de Livros e Capítulos na Ficha Cadastral do Leitor
+  const [readerContentPermissions, setReaderContentPermissions] = useState<ReaderContentPermissions>({
+    books: {},
+  });
+  const [isSavingReaderPermissions, setIsSavingReaderPermissions] = useState<boolean>(false);
+  const [permissionsSuccessMessage, setPermissionsSuccessMessage] = useState<string | null>(null);
+
+  // Permissões opcionais ao cadastrar Novo Leitor
+  const [newReaderPermissions, setNewReaderPermissions] = useState<ReaderContentPermissions | null>(null);
+  const [showNewReaderPermissionsToggle, setShowNewReaderPermissionsToggle] = useState<boolean>(false);
+
   // Status e sincronização do Firebase Cloud Firestore
   const [firebaseStatus, setFirebaseStatus] = useState<{
     isConnected: boolean;
@@ -123,17 +138,36 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   } | null>(null);
   const [isMigratingFirebase, setIsMigratingFirebase] = useState<boolean>(false);
 
-  // Modal de Exibição Única e Segura do PIN Recém-Criado
+  // Modal de Exibição Única e Segura do PIN Recém-Criado ou Redefinido
   const [createdPinModal, setCreatedPinModal] = useState<{
     isOpen: boolean;
     readerName: string;
     pin: string;
     copied: boolean;
+    title?: string;
+    subtitle?: string;
   }>({
     isOpen: false,
     readerName: '',
     pin: '',
     copied: false,
+  });
+
+  // Modal de Redefinição de PIN do Leitor
+  const [resetPinModal, setResetPinModal] = useState<{
+    isOpen: boolean;
+    reader: ReaderAccessRecord | null;
+    pinMode: 'auto' | 'manual';
+    customPin: string;
+    isSubmitting: boolean;
+    error: string | null;
+  }>({
+    isOpen: false,
+    reader: null,
+    pinMode: 'auto',
+    customPin: '',
+    isSubmitting: false,
+    error: null,
   });
 
   // Formulário de Alteração de PIN Geral/Legado
@@ -329,6 +363,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         customPin: pinMode === 'manual' ? customPinInput.trim() : undefined,
         expiresAt: calculatedExpiresAt,
         notes: readerNotes.trim() || undefined,
+        contentPermissions: newReaderPermissions || undefined,
       });
 
       if (res.success && res.result) {
@@ -347,6 +382,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         setReaderExpiryDays('never');
         setCustomExpiryDate('');
         setPinMode('auto');
+        setNewReaderPermissions(null);
+        setShowNewReaderPermissionsToggle(false);
 
         setActionSuccessMessage(`Acesso criado com sucesso para "${res.result.access.name}".`);
         await fetchReaders();
@@ -359,6 +396,160 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     } finally {
       setIsCreatingReader(false);
     }
+  };
+
+  // Sincroniza permissões ao abrir a Ficha Cadastral do Leitor
+  useEffect(() => {
+    if (!selectedReaderDetails) {
+      setPermissionsSuccessMessage(null);
+      return;
+    }
+
+    const initialPerms: ReaderContentPermissions = { books: {} };
+    libraryBooks.forEach((book) => {
+      const readerBook = selectedReaderDetails.contentPermissions?.books?.[book.id];
+      const chMap: Record<string, boolean> = {};
+      book.chapters.forEach((ch) => {
+        chMap[ch.id] = readerBook?.chapters?.[ch.id] !== false;
+      });
+      initialPerms.books[book.id] = {
+        enabled: readerBook?.enabled !== false,
+        chapters: chMap,
+      };
+    });
+
+    setReaderContentPermissions(initialPerms);
+    setPermissionsSuccessMessage(null);
+  }, [selectedReaderDetails]);
+
+  // Alterna disponibilidade do livro para o leitor na ficha cadastral
+  const handleToggleReaderBook = (bookId: string) => {
+    setReaderContentPermissions((prev) => {
+      const current = prev.books[bookId] || { enabled: true, chapters: {} };
+      const nextEnabled = !current.enabled;
+      return {
+        ...prev,
+        books: {
+          ...prev.books,
+          [bookId]: {
+            ...current,
+            enabled: nextEnabled,
+          },
+        },
+      };
+    });
+  };
+
+  // Alterna disponibilidade do capítulo para o leitor na ficha cadastral
+  const handleToggleReaderChapter = (bookId: string, chapterId: string) => {
+    setReaderContentPermissions((prev) => {
+      const currentBook = prev.books[bookId] || { enabled: true, chapters: {} };
+      const currentChapters = currentBook.chapters || {};
+      const nextChapterState = !(currentChapters[chapterId] !== false);
+      return {
+        ...prev,
+        books: {
+          ...prev.books,
+          [bookId]: {
+            ...currentBook,
+            chapters: {
+              ...currentChapters,
+              [chapterId]: nextChapterState,
+            },
+          },
+        },
+      };
+    });
+  };
+
+  // Libera todos os livros e capítulos para o leitor na ficha cadastral
+  const handleAllowAllContentForReader = () => {
+    const allAllowed: ReaderContentPermissions = { books: {} };
+    libraryBooks.forEach((b) => {
+      const chMap: Record<string, boolean> = {};
+      b.chapters.forEach((c) => {
+        chMap[c.id] = true;
+      });
+      allAllowed.books[b.id] = { enabled: true, chapters: chMap };
+    });
+    setReaderContentPermissions(allAllowed);
+  };
+
+  // Bloqueia todos os livros e capítulos para o leitor na ficha cadastral
+  const handleBlockAllContentForReader = () => {
+    const allBlocked: ReaderContentPermissions = { books: {} };
+    libraryBooks.forEach((b) => {
+      const chMap: Record<string, boolean> = {};
+      b.chapters.forEach((c) => {
+        chMap[c.id] = false;
+      });
+      allBlocked.books[b.id] = { enabled: false, chapters: chMap };
+    });
+    setReaderContentPermissions(allBlocked);
+  };
+
+  // Salva as permissões do leitor no servidor e Firestore
+  const handleSaveReaderPermissions = async () => {
+    if (!selectedReaderDetails) return;
+    setIsSavingReaderPermissions(true);
+    setPermissionsSuccessMessage(null);
+    try {
+      const res = await adminAuthService.updateReaderPermissions(
+        selectedReaderDetails.id,
+        readerContentPermissions
+      );
+      if (res.success && res.access) {
+        setSelectedReaderDetails(res.access);
+        setReaders((prev) => prev.map((r) => (r.id === res.access!.id ? res.access! : r)));
+        setPermissionsSuccessMessage('Permissões de livros e capítulos atualizadas e salvas com sucesso!');
+        setTimeout(() => setPermissionsSuccessMessage(null), 4000);
+      } else {
+        setActionErrorMessage(res.error || 'Erro ao atualizar permissões do leitor.');
+      }
+    } catch {
+      setActionErrorMessage('Erro de conexão ao salvar permissões do leitor.');
+    } finally {
+      setIsSavingReaderPermissions(false);
+    }
+  };
+
+  // Handlers para o formulário de NOVO LEITOR (pré-configuração opcional)
+  const handleToggleNewReaderBook = (bookId: string) => {
+    setNewReaderPermissions((prev) => {
+      const base: ReaderContentPermissions = prev || { books: {} };
+      const currentBook = base.books[bookId] || { enabled: true, chapters: {} };
+      return {
+        ...base,
+        books: {
+          ...base.books,
+          [bookId]: {
+            ...currentBook,
+            enabled: !currentBook.enabled,
+          },
+        },
+      };
+    });
+  };
+
+  const handleToggleNewReaderChapter = (bookId: string, chapterId: string) => {
+    setNewReaderPermissions((prev) => {
+      const base: ReaderContentPermissions = prev || { books: {} };
+      const currentBook = base.books[bookId] || { enabled: true, chapters: {} };
+      const curChapters = currentBook.chapters || {};
+      return {
+        ...base,
+        books: {
+          ...base.books,
+          [bookId]: {
+            ...currentBook,
+            chapters: {
+              ...curChapters,
+              [chapterId]: !(curChapters[chapterId] !== false),
+            },
+          },
+        },
+      };
+    });
   };
 
   // Alteração de estado de leitor (bloquear / reativar / revogar) com confirmação
@@ -411,6 +602,110 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
             await fetchStatus();
           } else {
             setActionErrorMessage(res.error || 'Falha ao excluir registro.');
+          }
+        } finally {
+          setConfirmModal((prev) => ({ ...prev, isOpen: false }));
+        }
+      },
+    });
+  };
+
+  // Abrir modal de redefinição de PIN
+  const handleOpenResetPinModal = (reader: ReaderAccessRecord) => {
+    setResetPinModal({
+      isOpen: true,
+      reader,
+      pinMode: 'auto',
+      customPin: '',
+      isSubmitting: false,
+      error: null,
+    });
+  };
+
+  // Confirmar redefinição de PIN
+  const handleConfirmResetPin = async () => {
+    if (!resetPinModal.reader) return;
+
+    if (resetPinModal.pinMode === 'manual') {
+      const pin = resetPinModal.customPin.trim();
+      if (pin.length < 4 || pin.length > 12) {
+        setResetPinModal((prev) => ({
+          ...prev,
+          error: 'O PIN manual deve conter entre 4 e 12 dígitos ou caracteres.',
+        }));
+        return;
+      }
+    }
+
+    setResetPinModal((prev) => ({ ...prev, isSubmitting: true, error: null }));
+
+    try {
+      const res = await adminAuthService.resetReaderPin(resetPinModal.reader.id, {
+        pinMode: resetPinModal.pinMode,
+        customPin: resetPinModal.pinMode === 'manual' ? resetPinModal.customPin.trim() : undefined,
+      });
+
+      if (res.success && res.result) {
+        const readerName = res.result.access.name;
+        const assignedPin = res.result.pin;
+
+        // Fecha modal de redefinição e ficha se estiver aberta
+        setResetPinModal({
+          isOpen: false,
+          reader: null,
+          pinMode: 'auto',
+          customPin: '',
+          isSubmitting: false,
+          error: null,
+        });
+        setSelectedReaderDetails(null);
+
+        // Exibe o novo PIN na modal segura de exibição única
+        setCreatedPinModal({
+          isOpen: true,
+          readerName,
+          pin: assignedPin,
+          copied: false,
+          title: 'PIN Redefinido com Sucesso!',
+          subtitle: 'O código anterior foi invalidado. Copie o novo PIN abaixo para entregar ao leitor:',
+        });
+
+        setActionSuccessMessage(`PIN do leitor "${readerName}" redefinido com sucesso.`);
+        await fetchReaders();
+        await fetchStatus();
+      } else {
+        setResetPinModal((prev) => ({
+          ...prev,
+          isSubmitting: false,
+          error: res.error || 'Falha ao redefinir o PIN.',
+        }));
+      }
+    } catch {
+      setResetPinModal((prev) => ({
+        ...prev,
+        isSubmitting: false,
+        error: 'Erro de conexão ao redefinir o PIN.',
+      }));
+    }
+  };
+
+  // Limpeza de todos os leitores (inclusive testes)
+  const handleClearAllReaders = () => {
+    setConfirmModal({
+      isOpen: true,
+      title: 'Limpar Todos os Cadastros de Leitores?',
+      description: `Esta ação removerá PERMANENTEMENTE todos os ${readers.length} leitores cadastrados (inclusive testes e reais) do banco de dados Cloud Firestore e do servidor, encerrando todas as sessões ativas. Esta ação não pode ser desfeita.`,
+      confirmText: 'Sim, Limpar Todos os Cadastros',
+      variant: 'danger',
+      action: async () => {
+        try {
+          const res = await adminAuthService.clearAllReaders();
+          if (res.success) {
+            setActionSuccessMessage(res.message || 'Todos os cadastros de leitores foram removidos com sucesso.');
+            await fetchReaders();
+            await fetchStatus();
+          } else {
+            setActionErrorMessage(res.error || 'Falha ao limpar cadastros de leitores.');
           }
         } finally {
           setConfirmModal((prev) => ({ ...prev, isOpen: false }));
@@ -1551,6 +1846,97 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                   </div>
                 </div>
 
+                {/* Permissões Iniciais de Conteúdo para este Novo Leitor */}
+                <div className="pt-1">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!showNewReaderPermissionsToggle && !newReaderPermissions) {
+                        const init: ReaderContentPermissions = { books: {} };
+                        libraryBooks.forEach((b) => {
+                          const chs: Record<string, boolean> = {};
+                          b.chapters.forEach((c) => { chs[c.id] = true; });
+                          init.books[b.id] = { enabled: true, chapters: chs };
+                        });
+                        setNewReaderPermissions(init);
+                      }
+                      setShowNewReaderPermissionsToggle(!showNewReaderPermissionsToggle);
+                    }}
+                    className={`w-full py-2 px-3 rounded-xl text-xs font-semibold border flex items-center justify-between transition-colors cursor-pointer ${
+                      showNewReaderPermissionsToggle
+                        ? isDark ? 'bg-amber-500/10 border-amber-500/30 text-amber-300' : 'bg-amber-50 border-amber-200 text-amber-800'
+                        : isDark ? 'border-zinc-800 bg-zinc-800/40 text-zinc-400 hover:text-zinc-200' : 'border-stone-200 bg-stone-50/60 text-stone-600 hover:text-stone-800'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <BookOpen className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+                      <span>Permissões de Livros e Capítulos para este Novo Leitor</span>
+                      <span className="text-[10px] font-normal opacity-80">(Padrão: Todos Liberados)</span>
+                    </div>
+                    {showNewReaderPermissionsToggle ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                  </button>
+
+                  {showNewReaderPermissionsToggle && newReaderPermissions && (
+                    <div className="mt-3 p-4 rounded-xl border border-stone-200 dark:border-zinc-700 bg-stone-50/50 dark:bg-zinc-800/40 space-y-3 animate-in fade-in duration-150">
+                      <p className="text-[11px] text-stone-500 dark:text-zinc-400 leading-relaxed">
+                        Defina previamente se algum livro ou capítulo deve iniciar bloqueado para este novo leitor.
+                      </p>
+                      <div className="space-y-2.5">
+                        {libraryBooks.map((book) => {
+                          const bPerm = newReaderPermissions.books[book.id] || { enabled: true, chapters: {} };
+                          const isBookOn = bPerm.enabled !== false;
+                          return (
+                            <div key={book.id} className="p-3 rounded-lg border border-stone-200/80 dark:border-zinc-700/80 bg-white dark:bg-zinc-800/80">
+                              <div className="flex items-center justify-between gap-2">
+                                <div>
+                                  <span className="font-serif font-bold text-xs text-stone-900 dark:text-zinc-100">{book.title}</span>
+                                  <span className="text-[10px] text-stone-500 dark:text-zinc-400 block">{book.author}</span>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => handleToggleNewReaderBook(book.id)}
+                                  className={`px-2.5 py-1 rounded-lg text-[10px] font-bold border transition-colors cursor-pointer ${
+                                    isBookOn
+                                      ? 'bg-emerald-50 text-emerald-800 border-emerald-300 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-800'
+                                      : 'bg-rose-50 text-rose-800 border-rose-300 dark:bg-rose-950/60 dark:text-rose-300 dark:border-rose-800'
+                                  }`}
+                                >
+                                  {isBookOn ? 'Liberado' : 'Bloqueado'}
+                                </button>
+                              </div>
+                              {isBookOn && (
+                                <div className="mt-2 pt-2 border-t border-stone-100 dark:border-zinc-700/60 space-y-1.5 pl-2">
+                                  {book.chapters.map((ch, idx) => {
+                                    const chOn = bPerm.chapters?.[ch.id] !== false;
+                                    return (
+                                      <div key={ch.id} className="flex items-center justify-between text-[11px]">
+                                        <span className="text-stone-700 dark:text-zinc-300 truncate max-w-[240px]">
+                                          Cap. {idx + 1}: {ch.title}
+                                        </span>
+                                        <button
+                                          type="button"
+                                          onClick={() => handleToggleNewReaderChapter(book.id, ch.id)}
+                                          className={`px-2 py-0.5 rounded text-[10px] font-semibold border transition-colors cursor-pointer ${
+                                            chOn
+                                              ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800'
+                                              : 'bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/40 dark:text-rose-300 dark:border-rose-800'
+                                          }`}
+                                        >
+                                          {chOn ? 'Liberado' : 'Bloqueado'}
+                                        </button>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
                 <div className="pt-2">
                   <button
                     type="submit"
@@ -1670,6 +2056,23 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                     <Printer className="w-3.5 h-3.5" />
                     <span className="hidden sm:inline">Imprimir</span>
                   </button>
+
+                  {/* Botão Limpar Todos os Leitores */}
+                  {readers.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={handleClearAllReaders}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-semibold border transition-colors flex items-center gap-1.5 cursor-pointer ${
+                        isDark
+                          ? 'border-rose-900/60 bg-rose-950/30 text-rose-300 hover:bg-rose-900/50'
+                          : 'border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100'
+                      }`}
+                      title="Remover todos os cadastros de leitores (inclusive cadastros de teste)"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span className="hidden sm:inline">Limpar Todos</span>
+                    </button>
+                  )}
                 </div>
               </div>
 
@@ -1698,6 +2101,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                         <th className="py-3 px-3">Idade Calculada</th>
                         <th className="py-3 px-3">Sexo & Estado Civil</th>
                         <th className="py-3 px-3">Status do PIN</th>
+                        <th className="py-3 px-3">Livros & Capítulos</th>
                         <th className="py-3 px-3">Data de Cadastro</th>
                         <th className="py-3 px-3 text-right">Ações</th>
                       </tr>
@@ -1870,6 +2274,29 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                                 )}
                               </td>
 
+                              {/* 6.1 Permissões de Livros e Capítulos */}
+                              <td className="py-3.5 px-3 whitespace-nowrap">
+                                {(() => {
+                                  const hasRestrictions = reader.contentPermissions?.books && Object.values(reader.contentPermissions.books).some(
+                                    (b) => b.enabled === false || (b.chapters && Object.values(b.chapters).some((ch) => ch === false))
+                                  );
+                                  if (hasRestrictions) {
+                                    return (
+                                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300">
+                                        <Lock className="w-3 h-3" />
+                                        Personalizado
+                                      </span>
+                                    );
+                                  }
+                                  return (
+                                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300">
+                                      <CheckCircle2 className="w-3 h-3" />
+                                      Liberado Total
+                                    </span>
+                                  );
+                                })()}
+                              </td>
+
                               {/* 7. Data de Cadastro / Criação */}
                               <td className="py-3.5 px-3 text-stone-600 dark:text-zinc-300 whitespace-nowrap font-mono text-[11px]">
                                 {formatDate(profile?.registeredAt || reader.createdAt)}
@@ -1886,6 +2313,16 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                                     title="Ver ficha cadastral completa deste leitor"
                                   >
                                     <Eye className="w-4 h-4" />
+                                  </button>
+
+                                  {/* Botão Redefinir PIN */}
+                                  <button
+                                    type="button"
+                                    onClick={() => handleOpenResetPinModal(reader)}
+                                    className="p-1.5 rounded-lg text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/40 transition-colors cursor-pointer"
+                                    title="Redefinir PIN deste leitor"
+                                  >
+                                    <KeyRound className="w-4 h-4" />
                                   </button>
 
                                   {/* Botão Bloquear / Desbloquear */}
@@ -2803,7 +3240,157 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         )}
       </main>
 
-      {/* MODAL DE EXIBIÇÃO ÚNICA E SEGURA DO PIN CRIADO */}
+      {/* MODAL DE REDEFINIÇÃO DE PIN DO LEITOR */}
+      {resetPinModal.isOpen && resetPinModal.reader && (
+        <div
+          className="fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-200"
+          role="dialog"
+          aria-modal="true"
+        >
+          <div
+            className={`max-w-md w-full p-6 sm:p-7 rounded-3xl border shadow-2xl relative animate-in zoom-in-95 duration-150 ${
+              isDark ? 'bg-zinc-900 border-zinc-700 text-zinc-100' : 'bg-white border-stone-200 text-stone-900'
+            }`}
+          >
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-12 h-12 rounded-2xl bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
+                <KeyRound className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="text-lg font-serif font-bold text-stone-900 dark:text-zinc-50">
+                  Redefinir PIN do Leitor
+                </h3>
+                <p className="text-xs text-stone-500 dark:text-zinc-400 font-sans mt-0.5">
+                  Leitor: <strong className="font-semibold text-stone-800 dark:text-zinc-200">{resetPinModal.reader.name}</strong>
+                </p>
+              </div>
+            </div>
+
+            {/* Aviso Importante de Invalidação do PIN Anterior */}
+            <div className="p-3.5 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200/80 dark:border-amber-900/50 mb-4 text-xs font-sans flex items-start gap-2.5">
+              <ShieldAlert className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+              <div className="text-stone-700 dark:text-zinc-300 leading-relaxed">
+                <strong className="text-stone-900 dark:text-zinc-100">Atenção:</strong> O PIN anterior será invalidado imediatamente. O cadastro pessoal, observações e histórico do leitor serão <strong className="text-emerald-700 dark:text-emerald-400">100% preservados</strong>.
+              </div>
+            </div>
+
+            {/* Seleção do Modo de Geração */}
+            <div className="space-y-3 mb-4">
+              <label className="text-xs font-semibold text-stone-700 dark:text-zinc-300 block">
+                Como deseja definir o novo PIN?
+              </label>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setResetPinModal((prev) => ({ ...prev, pinMode: 'auto', error: null }))}
+                  className={`p-3 rounded-2xl border text-left transition-all cursor-pointer ${
+                    resetPinModal.pinMode === 'auto'
+                      ? 'border-amber-500 bg-amber-50/70 dark:bg-amber-950/40 text-amber-950 dark:text-amber-100 font-semibold ring-1 ring-amber-500/50'
+                      : 'border-stone-200 dark:border-zinc-800 bg-stone-50/50 dark:bg-zinc-800/30 text-stone-600 dark:text-zinc-400 hover:border-stone-300'
+                  }`}
+                >
+                  <div className="flex items-center gap-1.5 mb-1 text-xs">
+                    <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+                    <span>Automático (6 dígitos)</span>
+                  </div>
+                  <span className="text-[10px] text-stone-500 dark:text-zinc-400 font-normal block leading-tight">
+                    Código numérico aleatório seguro
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setResetPinModal((prev) => ({ ...prev, pinMode: 'manual', error: null }))}
+                  className={`p-3 rounded-2xl border text-left transition-all cursor-pointer ${
+                    resetPinModal.pinMode === 'manual'
+                      ? 'border-amber-500 bg-amber-50/70 dark:bg-amber-950/40 text-amber-950 dark:text-amber-100 font-semibold ring-1 ring-amber-500/50'
+                      : 'border-stone-200 dark:border-zinc-800 bg-stone-50/50 dark:bg-zinc-800/30 text-stone-600 dark:text-zinc-400 hover:border-stone-300'
+                  }`}
+                >
+                  <div className="flex items-center gap-1.5 mb-1 text-xs">
+                    <KeyRound className="w-3.5 h-3.5 text-amber-500" />
+                    <span>Personalizado</span>
+                  </div>
+                  <span className="text-[10px] text-stone-500 dark:text-zinc-400 font-normal block leading-tight">
+                    Você digita o novo código
+                  </span>
+                </button>
+              </div>
+
+              {/* Campo para PIN Manual */}
+              {resetPinModal.pinMode === 'manual' && (
+                <div className="pt-2 animate-in fade-in duration-150">
+                  <label className="text-[11px] font-semibold text-stone-600 dark:text-zinc-400 block mb-1">
+                    Novo PIN Personalizado (4 a 12 caracteres):
+                  </label>
+                  <input
+                    type="text"
+                    value={resetPinModal.customPin}
+                    onChange={(e) =>
+                      setResetPinModal((prev) => ({ ...prev, customPin: e.target.value, error: null }))
+                    }
+                    placeholder="Ex: 582914 ou leitor2026"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-stone-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-stone-900 dark:text-zinc-100 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-amber-500"
+                    maxLength={12}
+                    autoFocus
+                  />
+                </div>
+              )}
+            </div>
+
+            {/* Mensagem de Erro se houver */}
+            {resetPinModal.error && (
+              <div className="p-3 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900 text-rose-700 dark:text-rose-300 text-xs flex items-center gap-2 mb-4">
+                <AlertTriangle className="w-4 h-4 shrink-0" />
+                <span>{resetPinModal.error}</span>
+              </div>
+            )}
+
+            {/* Ações */}
+            <div className="flex flex-col sm:flex-row items-center justify-end gap-2.5 pt-3 border-t border-stone-100 dark:border-zinc-800">
+              <button
+                type="button"
+                onClick={() =>
+                  setResetPinModal({
+                    isOpen: false,
+                    reader: null,
+                    pinMode: 'auto',
+                    customPin: '',
+                    isSubmitting: false,
+                    error: null,
+                  })
+                }
+                disabled={resetPinModal.isSubmitting}
+                className="w-full sm:w-auto px-4 py-2.5 rounded-xl text-xs font-semibold border border-stone-200 dark:border-zinc-700 text-stone-600 dark:text-zinc-300 hover:bg-stone-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer"
+              >
+                Cancelar
+              </button>
+
+              <button
+                type="button"
+                onClick={handleConfirmResetPin}
+                disabled={resetPinModal.isSubmitting}
+                className="w-full sm:w-auto px-5 py-2.5 rounded-xl text-xs font-semibold bg-amber-500 hover:bg-amber-600 text-white dark:text-zinc-950 transition-colors cursor-pointer flex items-center justify-center gap-2 shadow-xs"
+              >
+                {resetPinModal.isSubmitting ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <span>Redefinindo PIN...</span>
+                  </>
+                ) : (
+                  <>
+                    <KeyRound className="w-3.5 h-3.5" />
+                    <span>Confirmar Redefinição</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL DE EXIBIÇÃO ÚNICA E SEGURA DO PIN CRIADO OU REDEFINIDO */}
       {createdPinModal.isOpen && (
         <div
           className="fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-200"
@@ -2821,11 +3408,16 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
               </div>
               <div>
                 <h3 className="text-lg font-serif font-bold text-stone-900 dark:text-zinc-50">
-                  PIN Gerado com Sucesso!
+                  {createdPinModal.title || 'PIN Gerado com Sucesso!'}
                 </h3>
                 <p className="text-xs text-stone-500 dark:text-zinc-400 font-sans">
                   Leitor: <strong className="font-semibold text-stone-800 dark:text-zinc-200">{createdPinModal.readerName}</strong>
                 </p>
+                {createdPinModal.subtitle && (
+                  <p className="text-[11px] text-amber-700 dark:text-amber-400 font-sans mt-0.5">
+                    {createdPinModal.subtitle}
+                  </p>
+                )}
               </div>
             </div>
 
@@ -3117,11 +3709,233 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                   </div>
                 )}
               </div>
+
+              {/* Gestão de Permissões de Livros e Capítulos para este Leitor */}
+              <div className="p-4 sm:p-5 rounded-2xl bg-amber-50/40 dark:bg-zinc-800/60 border border-amber-200/70 dark:border-zinc-700 space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <BookOpen className="w-4 h-4 text-amber-600 dark:text-amber-400" />
+                      <h4 className="font-serif font-bold text-sm text-stone-900 dark:text-zinc-100">
+                        Liberado / Bloqueado de Livros e Capítulos
+                      </h4>
+                    </div>
+                    <p className="text-[11px] text-stone-500 dark:text-zinc-400 font-sans mt-0.5">
+                      Gerencie individualmente quais obras e capítulos este leitor pode acessar.
+                    </p>
+                  </div>
+
+                  {/* Ações Rápidas: Liberar Todos / Bloquear Todos */}
+                  <div className="flex items-center gap-2 self-start sm:self-center shrink-0">
+                    <button
+                      type="button"
+                      onClick={handleAllowAllContentForReader}
+                      className="px-2.5 py-1.5 rounded-lg text-[11px] font-semibold bg-emerald-100 hover:bg-emerald-200 dark:bg-emerald-950/60 dark:hover:bg-emerald-900/60 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800 transition-colors cursor-pointer flex items-center gap-1"
+                      title="Liberar todos os livros e capítulos para este leitor"
+                    >
+                      <CheckCheck className="w-3 h-3" />
+                      <span>Liberar Todos</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleBlockAllContentForReader}
+                      className="px-2.5 py-1.5 rounded-lg text-[11px] font-semibold bg-rose-100 hover:bg-rose-200 dark:bg-rose-950/60 dark:hover:bg-rose-900/60 text-rose-800 dark:text-rose-300 border border-rose-300 dark:border-rose-800 transition-colors cursor-pointer flex items-center gap-1"
+                      title="Bloquear todos os livros e capítulos para este leitor"
+                    >
+                      <Ban className="w-3 h-3" />
+                      <span>Bloquear Todos</span>
+                    </button>
+                  </div>
+                </div>
+
+                {permissionsSuccessMessage && (
+                  <div className="p-2.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-900/50 text-emerald-800 dark:text-emerald-300 text-xs flex items-center gap-2 animate-in fade-in duration-150">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                    <span>{permissionsSuccessMessage}</span>
+                  </div>
+                )}
+
+                {/* Lista dos livros do acervo com controle por capítulo */}
+                <div className="space-y-3">
+                  {libraryBooks.map((book) => {
+                    const bookPerm = readerContentPermissions.books[book.id] || {
+                      enabled: true,
+                      chapters: {},
+                    };
+                    const isBookAllowed = bookPerm.enabled !== false;
+                    const chaptersCount = book.chapters.length;
+                    const allowedChaptersCount = book.chapters.filter((ch) => bookPerm.chapters?.[ch.id] !== false).length;
+
+                    return (
+                      <div
+                        key={book.id}
+                        className={`rounded-xl border transition-all ${
+                          isBookAllowed
+                            ? 'bg-white dark:bg-zinc-900/80 border-stone-200 dark:border-zinc-700/80 shadow-2xs'
+                            : 'bg-stone-100/70 dark:bg-zinc-900/40 border-stone-300/60 dark:border-zinc-800 opacity-80'
+                        }`}
+                      >
+                        {/* Linha principal do livro */}
+                        <div className="p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                          <div className="flex items-start gap-2.5">
+                            <div
+                              className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 mt-0.5 ${
+                                isBookAllowed
+                                  ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400'
+                                  : 'bg-zinc-200 dark:bg-zinc-800 text-zinc-400'
+                              }`}
+                            >
+                              <BookOpen className="w-4 h-4" />
+                            </div>
+                            <div>
+                              <div className="flex flex-wrap items-center gap-2">
+                                <h5 className="font-serif font-bold text-xs sm:text-sm text-stone-900 dark:text-zinc-100">
+                                  {book.title}
+                                </h5>
+                                <span
+                                  className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                                    isBookAllowed
+                                      ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300'
+                                      : 'bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300'
+                                  }`}
+                                >
+                                  {isBookAllowed ? 'Liberado' : 'Bloqueado'}
+                                </span>
+                              </div>
+                              <p className="text-[11px] text-stone-500 dark:text-zinc-400 font-serif mt-0.5">
+                                {book.author} • {isBookAllowed ? `${allowedChaptersCount} de ${chaptersCount} cap. liberado(s)` : 'Acesso suspenso'}
+                              </p>
+                            </div>
+                          </div>
+
+                          {/* Botão de Alternar Livro */}
+                          <div className="flex items-center gap-2 self-end sm:self-center shrink-0">
+                            <button
+                              type="button"
+                              onClick={() => handleToggleReaderBook(book.id)}
+                              className={`px-3 py-1.5 rounded-xl text-xs font-semibold border transition-all cursor-pointer flex items-center gap-1.5 ${
+                                isBookAllowed
+                                  ? 'bg-rose-50 hover:bg-rose-100 text-rose-700 border-rose-200 dark:bg-rose-950/40 dark:text-rose-300 dark:border-rose-900/50'
+                                  : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-900/50'
+                              }`}
+                            >
+                              {isBookAllowed ? (
+                                <>
+                                  <Lock className="w-3.5 h-3.5" />
+                                  <span>Bloquear Livro</span>
+                                </>
+                              ) : (
+                                <>
+                                  <Unlock className="w-3.5 h-3.5" />
+                                  <span>Liberar Livro</span>
+                                </>
+                              )}
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Capítulos do livro (se livro estiver liberado) */}
+                        {isBookAllowed ? (
+                          <div className="px-3.5 pb-3.5 pt-1 border-t border-stone-100 dark:border-zinc-800/80 space-y-2">
+                            <span className="text-[10px] font-semibold uppercase tracking-wider text-stone-400 dark:text-zinc-400 block pt-1">
+                              Capítulos da Obra:
+                            </span>
+                            <div className="space-y-1.5">
+                              {book.chapters.map((chapter, chIdx) => {
+                                const isChapterAllowed = bookPerm.chapters?.[chapter.id] !== false;
+                                return (
+                                  <div
+                                    key={chapter.id}
+                                    className={`p-2.5 rounded-lg border flex items-center justify-between gap-2.5 transition-colors ${
+                                      isChapterAllowed
+                                        ? 'bg-stone-50/70 dark:bg-zinc-800/50 border-stone-200/60 dark:border-zinc-700/60'
+                                        : 'bg-rose-50/50 dark:bg-rose-950/20 border-rose-200/60 dark:border-rose-900/40'
+                                    }`}
+                                  >
+                                    <div className="flex items-center gap-2 min-w-0">
+                                      <span className="font-mono text-[10px] font-bold text-stone-400 dark:text-zinc-500 shrink-0">
+                                        #{chIdx + 1}
+                                      </span>
+                                      <span className="text-xs text-stone-800 dark:text-zinc-200 font-serif truncate">
+                                        {chapter.title}
+                                      </span>
+                                    </div>
+
+                                    <div className="flex items-center gap-2 shrink-0">
+                                      <span
+                                        className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                                          isChapterAllowed
+                                            ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300'
+                                            : 'bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300'
+                                        }`}
+                                      >
+                                        {isChapterAllowed ? 'Liberado' : 'Bloqueado'}
+                                      </span>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleToggleReaderChapter(book.id, chapter.id)}
+                                        className={`px-2.5 py-1 rounded-lg text-[10px] font-semibold border transition-colors cursor-pointer ${
+                                          isChapterAllowed
+                                            ? 'bg-stone-100 hover:bg-stone-200 dark:bg-zinc-700 text-stone-700 dark:text-zinc-200 border-stone-300 dark:border-zinc-600'
+                                            : 'bg-emerald-600 hover:bg-emerald-700 text-white border-emerald-600'
+                                        }`}
+                                      >
+                                        {isChapterAllowed ? 'Bloquear' : 'Liberar'}
+                                      </button>
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="px-3.5 pb-3 pt-0 text-[11px] text-rose-600 dark:text-rose-400 italic">
+                            Livro bloqueado para este leitor. Todos os seus capítulos estão automaticamente indisponíveis.
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Botão de Salvar Permissões */}
+                <div className="pt-2">
+                  <button
+                    type="button"
+                    onClick={handleSaveReaderPermissions}
+                    disabled={isSavingReaderPermissions}
+                    className="w-full py-2.5 px-4 rounded-xl text-xs font-semibold bg-stone-900 hover:bg-stone-800 dark:bg-amber-500 dark:hover:bg-amber-400 text-white dark:text-zinc-950 flex items-center justify-center gap-2 transition-all cursor-pointer shadow-xs disabled:opacity-50"
+                  >
+                    {isSavingReaderPermissions ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        <span>Salvando Permissões no Servidor e Nuvem...</span>
+                      </>
+                    ) : (
+                      <>
+                        <BookCheck className="w-4 h-4" />
+                        <span>Salvar Permissões de Conteúdo deste Leitor</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
             </div>
 
             {/* Rodapé da Modal com Ações Rápidas */}
-            <div className="flex items-center justify-between gap-3 pt-5 mt-5 border-t border-stone-100 dark:border-zinc-800">
-              <div className="flex items-center gap-2">
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 pt-5 mt-5 border-t border-stone-100 dark:border-zinc-800">
+              <div className="flex flex-wrap items-center gap-2">
+                {/* Botão Redefinir PIN */}
+                <button
+                  type="button"
+                  onClick={() => handleOpenResetPinModal(selectedReaderDetails)}
+                  className="px-3.5 py-2 rounded-xl text-xs font-semibold bg-amber-500 hover:bg-amber-600 text-white dark:bg-amber-500 dark:hover:bg-amber-400 dark:text-zinc-950 transition-colors cursor-pointer flex items-center gap-1.5 shadow-2xs"
+                  title="Redefinir PIN deste leitor com geração automática ou manual"
+                >
+                  <KeyRound className="w-3.5 h-3.5" />
+                  <span>Redefinir PIN</span>
+                </button>
+
                 {selectedReaderDetails.status === 'active' ? (
                   <button
                     type="button"

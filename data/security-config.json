@@ -22,150 +22,67 @@
   "contentAvailability": {
     "books": {
       "entre-a-cruz-e-o-mundo": {
+        "enabled": true,
         "chapters": {
-          "capitulo-2": true,
+          "capitulo-1": true,
+          "capitulo-2": false
+        }
+      },
+      "e-ai-crente": {
+        "chapters": {
           "capitulo-1": true
         },
         "enabled": true
-      },
-      "e-ai-crente": {
-        "enabled": true,
-        "chapters": {
-          "capitulo-1": true
-        }
       }
     }
   },
   "readerAccesses": [
     {
-      "status": "active",
-      "expiresAt": null,
-      "updatedAt": "2026-10-12T20:57:50.968Z",
-      "pinSalt": "b966afd4ab3307b52b2cff568ca26543",
-      "profile": {
-        "maritalStatus": "Casado(a)",
-        "phoneFormatted": "(19) 98877-6655",
-        "gender": "Masculino",
-        "phone": "19988776655",
-        "registeredAt": "2026-10-12T20:55:09.543Z",
-        "fullName": "Carlos Eduardo da Rocha",
-        "updatedAt": "2026-10-12T20:55:09.543Z",
-        "birthDate": "1992-08-20"
+      "id": "reader-1791893732551-e38689bb",
+      "createdAt": "2026-10-13T12:15:32.551Z",
+      "lastUsedAt": "2026-10-13T12:29:28.634Z",
+      "name": "Ana Clara Carchano Garcia",
+      "pinSalt": "10b1eb7714981805d716333b3d0b89ce",
+      "contentPermissions": {
+        "books": {
+          "e-ai-crente": {
+            "enabled": true,
+            "chapters": {
+              "capitulo-1": true
+            }
+          }
+        }
       },
-      "notes": "Leitor de teste Firebase",
-      "createdAt": "2026-10-12T20:55:09.491Z",
-      "id": "reader-1791838509491-2c019e49",
-      "pinHash": "95c4abbee68ae7a72b14282b7d07256a7e3de19b2330f809f69e3b96e151a151",
-      "hasProfile": true,
-      "name": "Carlos Eduardo da Rocha",
-      "lastUsedAt": "2026-10-12T20:55:09.515Z"
+      "profile": null,
+      "pinHash": "da129db119fe791df855040168a69fffc4524d2beb8345d794576197cece8b33",
+      "hasProfile": false,
+      "notes": "Leitora teste",
+      "updatedAt": "2026-10-13T12:29:03.662Z",
+      "expiresAt": null,
+      "status": "active"
     },
     {
-      "createdAt": "2026-10-12T20:35:34.550Z",
-      "id": "reader-1791837334550-656857d3",
-      "status": "active",
-      "notes": "Criado para teste de cadastro de primeiro acesso",
-      "updatedAt": "2026-10-12T20:57:51.074Z",
-      "name": "José Fernando Veiga",
-      "expiresAt": null,
       "profile": {
-        "maritalStatus": "Solteiro(a)",
         "phoneFormatted": "(19) 98102-6699",
-        "phone": "19981026699",
-        "registeredAt": "2026-10-12T20:35:34.573Z",
         "gender": "Masculino",
-        "fullName": "José Fernando Veiga",
-        "updatedAt": "2026-10-12T20:35:34.573Z",
-        "birthDate": "1995-04-20"
+        "fullName": "Fernando Veiga",
+        "phone": "19981026699",
+        "maritalStatus": "Casado(a)",
+        "birthDate": "1967-04-02",
+        "updatedAt": "2026-10-13T12:12:21.075Z",
+        "registeredAt": "2026-10-13T12:12:21.075Z"
       },
-      "pinSalt": "b197c2edc867aca87423ad4e94432da2",
-      "hasProfile": true,
-      "lastUsedAt": "2026-10-12T20:35:34.586Z",
-      "pinHash": "930a84e0dcb52e838617b3bb2319598f795e70d352e057f90e0e55ecfcdcecc4"
-    },
-    {
-      "name": "Novo Leitor Teste",
-      "pinHash": "90efbf038d62193fb34dc0d7c0279ded5d7047cf689bf0cd5442c09753aa04ca",
-      "profile": null,
-      "pinSalt": "63e8865b3707de8039202e9bcc8e09e4",
-      "id": "reader-1791837319194-13916616",
-      "lastUsedAt": "2026-10-12T20:35:19.205Z",
-      "createdAt": "2026-10-12T20:35:19.195Z",
-      "expiresAt": null,
-      "status": "active",
-      "notes": "Criado para teste de cadastro de primeiro acesso",
-      "updatedAt": "2026-10-12T20:57:51.221Z",
-      "hasProfile": false
-    },
-    {
-      "status": "active",
-      "notes": "",
-      "lastUsedAt": "2026-10-11T13:32:46.037Z",
-      "createdAt": "2026-10-11T13:32:46.032Z",
-      "name": "Leitor Expirável",
-      "pinSalt": "560972e56212bc4fb5ea1a4449bc8c9f",
-      "profile": null,
-      "expiresAt": "2026-10-11T13:32:47.518Z",
-      "pinHash": "d899eecd6c7e4717889b7d50c73fcb8800acb9265e270bcec607e6d3d7f7591c",
-      "hasProfile": false,
-      "id": "reader-1791725566031-f8317817",
-      "updatedAt": "2026-10-12T20:57:51.330Z"
-    },
-    {
-      "status": "revoked",
-      "lastUsedAt": "2026-10-11T13:32:37.515Z",
-      "createdAt": "2026-10-11T13:32:37.497Z",
-      "notes": "",
-      "pinSalt": "aa2ad28ef1dde445864af985eba8d1f7",
-      "profile": null,
-      "expiresAt": null,
-      "hasProfile": false,
-      "pinHash": "8803cdf5c0afd60ae398249fe66a58cbd7139cff345fc13c74c16da7e37f65a5",
-      "updatedAt": "2026-10-12T20:57:51.409Z",
-      "name": "Leitor Para Bloquear",
-      "id": "reader-1791725557496-b49ea6b4"
-    },
-    {
-      "notes": "Criado manual",
-      "expiresAt": null,
-      "status": "active",
-      "pinHash": "c82f428c0e9dc98e79bb91c7aabf589510fac95794be0e94555317196180df1a",
-      "updatedAt": "2026-10-12T20:57:51.484Z",
-      "hasProfile": false,
-      "createdAt": "2026-10-11T13:32:28.520Z",
-      "lastUsedAt": null,
-      "name": "Leitor Teste Manual",
-      "id": "reader-1791725548520-46e11574",
-      "profile": null,
-      "pinSalt": "64d71aeeafe8a270de023da6b5dae47d"
-    },
-    {
-      "hasProfile": false,
-      "expiresAt": null,
-      "profile": null,
-      "pinSalt": "2a0955f0c3d47d86f1360146dd6cdbe3",
-      "updatedAt": "2026-10-12T20:57:51.588Z",
-      "id": "reader-1791725548510-c93bfc7f",
-      "createdAt": "2026-10-11T13:32:28.510Z",
-      "pinHash": "5823793fabf0c1e4ee13a70bd9b4c968d561cb05e98d5dcdc849c5f9ac42eef6",
-      "status": "active",
-      "lastUsedAt": "2026-10-11T13:32:28.531Z",
-      "notes": "Criado via teste",
-      "name": "Leitor Teste Auto"
-    },
-    {
-      "pinSalt": "61985b4a8abf3cc0219d501b4a2b61b5",
-      "profile": null,
-      "pinHash": "68a042a5654d3211bf2a8a27ed971090e7d0514c8e49110cc37462d75168482f",
-      "name": "Acesso Padrão Inicial",
-      "status": "active",
-      "hasProfile": false,
-      "expiresAt": null,
-      "updatedAt": "2026-10-12T20:57:51.703Z",
-      "createdAt": "2026-10-10T16:41:50.949Z",
+      "pinHash": "19d7779c0ba000659d7dc1316edcc846bd0731e52911ac724e48fc198899916b",
       "notes": "Acesso inicial configurado pelo sistema",
       "id": "access-initial-default",
-      "lastUsedAt": "2026-10-12T20:37:52.783Z"
+      "expiresAt": null,
+      "updatedAt": "2026-10-13T12:12:21.076Z",
+      "pinSalt": "dc41e63cfc00c20311f1edd28cff99c3",
+      "lastUsedAt": "2026-10-13T12:11:37.109Z",
+      "hasProfile": true,
+      "name": "Fernando Veiga",
+      "createdAt": "2026-10-10T16:41:50.949Z",
+      "status": "active"
     }
   ]
 }

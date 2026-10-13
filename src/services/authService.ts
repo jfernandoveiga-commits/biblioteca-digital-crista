@@ -306,7 +306,16 @@ export const authService = {
     chapterId: string
   ): Promise<{ allowed: boolean; error?: string }> {
     try {
-      const response = await fetch(`/api/library/check-access/${bookId}/${chapterId}`);
+      const token = this.getToken();
+      const headers: Record<string, string> = {};
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+      const response = await fetch(`/api/library/check-access/${bookId}/${chapterId}`, {
+        method: 'GET',
+        headers,
+        credentials: 'include',
+      });
       const data = await response.json();
       return {
         allowed: Boolean(data.allowed),

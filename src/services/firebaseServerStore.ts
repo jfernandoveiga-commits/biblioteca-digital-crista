@@ -271,6 +271,7 @@ class FirebaseServerStore {
       notes: reader.notes || '',
       hasProfile: Boolean(reader.hasProfile),
       profile: reader.profile || null,
+      contentPermissions: reader.contentPermissions || null,
       updatedAt: new Date().toISOString(),
     };
 
@@ -292,6 +293,33 @@ class FirebaseServerStore {
     } else if (this.adminDb) {
       await this.adminDb.collection('reader_accesses').doc(readerId).delete();
     }
+  }
+
+  /**
+   * Remove todos os acessos de leitores do Firestore
+   */
+  public async clearAllReaderAccesses(): Promise<number> {
+    if (!this.isReady()) return 0;
+
+    let deleted = 0;
+    try {
+      if (this.clientDb) {
+        const snap = await getDocs(collection(this.clientDb, 'reader_accesses'));
+        for (const d of snap.docs) {
+          await deleteDoc(d.ref);
+          deleted++;
+        }
+      } else if (this.adminDb) {
+        const snap = await this.adminDb.collection('reader_accesses').get();
+        for (const d of snap.docs) {
+          await d.ref.delete();
+          deleted++;
+        }
+      }
+    } catch (err: any) {
+      console.warn('[Firebase] Erro ao limpar leitores do Firestore:', err.message);
+    }
+    return deleted;
   }
 
   /**

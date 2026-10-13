@@ -112,6 +112,15 @@ export interface ReaderProfile {
 
 export type ReaderAccessStatus = 'active' | 'blocked' | 'revoked';
 
+export interface ReaderBookPermission {
+  enabled: boolean;
+  chapters: Record<string, boolean>;
+}
+
+export interface ReaderContentPermissions {
+  books: Record<string, ReaderBookPermission>;
+}
+
 export interface ReaderAccessRecord {
   id: string;
   name: string;
@@ -124,6 +133,7 @@ export interface ReaderAccessRecord {
   notes?: string;
   hasProfile?: boolean;
   profile?: ReaderProfile | null;
+  contentPermissions?: ReaderContentPermissions | null;
 }
 
 interface SecurityConfig {
@@ -673,6 +683,37 @@ app.get('/api/auth/session', (req, res) => {
 
   const hasProfile = Boolean(matchedAccess ? (matchedAccess.hasProfile && matchedAccess.profile) : false);
 
+  // Calcula a disponibilidade efetiva para este leitor:
+  // Combina a configuração geral da biblioteca com as permissões individuais do leitor (Liberado/Bloqueado)
+  let effectiveContentAvailability: ContentAvailabilityConfig = {
+    books: { ...securityConfig.contentAvailability.books },
+  };
+
+  if (matchedAccess?.contentPermissions?.books) {
+    const mergedBooks: Record<string, BookAvailability> = {};
+    for (const [bId, bConfig] of Object.entries(securityConfig.contentAvailability.books)) {
+      mergedBooks[bId] = {
+        enabled: bConfig.enabled,
+        chapters: { ...bConfig.chapters },
+      };
+    }
+    for (const [bId, bPerm] of Object.entries(matchedAccess.contentPermissions.books)) {
+      const current = mergedBooks[bId] || { enabled: true, chapters: {} };
+      const bookEnabled = current.enabled !== false && bPerm.enabled !== false;
+      const mergedChapters: Record<string, boolean> = { ...(current.chapters || {}) };
+      if (bPerm.chapters) {
+        for (const [chId, chVal] of Object.entries(bPerm.chapters)) {
+          mergedChapters[chId] = (mergedChapters[chId] !== false) && (chVal !== false);
+        }
+      }
+      mergedBooks[bId] = {
+        enabled: bookEnabled,
+        chapters: mergedChapters,
+      };
+    }
+    effectiveContentAvailability = { books: mergedBooks };
+  }
+
   res.json({
     authenticated: true,
     expiresAt: session.expiresAt,
@@ -681,7 +722,7 @@ app.get('/api/auth/session', (req, res) => {
     hasProfile,
     readerProfile: matchedAccess?.profile || null,
     features: securityConfig.features,
-    contentAvailability: securityConfig.contentAvailability,
+    contentAvailability: effectiveContentAvailability,
   });
 });
 
@@ -715,6 +756,8 @@ app.get('/api/library/check-access/:bookId/:chapterId', (req, res) => {
   }
 
   const { bookId, chapterId } = req.params;
+
+  // 1. Verificação global da biblioteca
   const bookConfig = securityConfig.contentAvailability.books[bookId];
   if (bookConfig && bookConfig.enabled === false) {
     res.status(403).json({
@@ -730,6 +773,34 @@ app.get('/api/library/check-access/:bookId/:chapterId', (req, res) => {
       error: 'Este capítulo está temporariamente indisponível para leitura.',
     });
     return;
+  }
+
+  // 2. Verificação individual do perfil do leitor autenticado
+  const readerToken = extractReaderToken(req);
+  if (readerToken) {
+    const session = activeReaderSessions.get(readerToken);
+    if (session?.accessId) {
+      const reader = (securityConfig.readerAccesses || []).find((a) => a.id === session.accessId);
+      if (reader && reader.contentPermissions && reader.contentPermissions.books) {
+        const readerBookPerm = reader.contentPermissions.books[bookId];
+        if (readerBookPerm) {
+          if (readerBookPerm.enabled === false) {
+            res.status(403).json({
+              allowed: false,
+              error: 'O acesso a este livro está bloqueado para o seu perfil de leitor pela administração.',
+            });
+            return;
+          }
+          if (readerBookPerm.chapters && readerBookPerm.chapters[chapterId] === false) {
+            res.status(403).json({
+              allowed: false,
+              error: 'O acesso a este capítulo está bloqueado para o seu perfil de leitor pela administração.',
+            });
+            return;
+          }
+        }
+      }
+    }
   }
 
   res.json({ allowed: true });
@@ -1436,6 +1507,7 @@ function sanitizeReaderAccess(acc: ReaderAccessRecord) {
     notes: acc.notes || '',
     hasProfile: Boolean(acc.hasProfile && acc.profile),
     profile: acc.profile || null,
+    contentPermissions: acc.contentPermissions || null,
   };
 }
 
@@ -1450,7 +1522,7 @@ app.get('/api/admin/readers', requireAdminAuth, (_req, res) => {
 
 // 10.2 Criar novo PIN de leitor (individual, gerado ou manual)
 app.post('/api/admin/readers', requireAdminAuth, (req, res) => {
-  const { name, pinMode = 'auto', customPin, expiresAt = null, notes } = req.body || {};
+  const { name, pinMode = 'auto', customPin, expiresAt = null, notes, contentPermissions } = req.body || {};
 
   const cleanName = typeof name === 'string' ? name.trim() : '';
   if (!cleanName || cleanName.length < 2) {
@@ -1535,6 +1607,7 @@ app.post('/api/admin/readers', requireAdminAuth, (req, res) => {
     expiresAt: cleanExpiresAt,
     lastUsedAt: null,
     notes: typeof notes === 'string' ? notes.trim() : '',
+    contentPermissions: contentPermissions && typeof contentPermissions === 'object' ? contentPermissions : undefined,
   };
 
   if (!securityConfig.readerAccesses) {
@@ -1637,6 +1710,150 @@ app.delete('/api/admin/readers/:id', requireAdminAuth, (req, res) => {
   res.json({
     success: true,
     message: `Acesso de "${removed.name}" excluído com sucesso.`,
+  });
+});
+
+// 10.5 Redefinir PIN de um leitor existente (substitui hash/salt e preserva dados)
+app.post('/api/admin/readers/:id/reset-pin', requireAdminAuth, async (req, res) => {
+  const { id } = req.params;
+  const { pinMode = 'auto', customPin } = req.body || {};
+
+  const target = (securityConfig.readerAccesses || []).find((a) => a.id === id);
+  if (!target) {
+    res.status(404).json({
+      success: false,
+      error: 'Acesso de leitor não encontrado.',
+    });
+    return;
+  }
+
+  let pinToAssign = '';
+
+  if (pinMode === 'manual') {
+    const rawPin = typeof customPin === 'string' ? customPin.trim() : '';
+    if (!rawPin || rawPin.length < 4 || rawPin.length > 12) {
+      res.status(400).json({
+        success: false,
+        error: 'O PIN manual deve conter entre 4 e 12 dígitos ou caracteres.',
+      });
+      return;
+    }
+    pinToAssign = rawPin;
+  } else {
+    // Modo automático: gera PIN numérico de 6 dígitos aleatório criptograficamente seguro
+    const randomNum = crypto.randomInt(100000, 999999);
+    pinToAssign = String(randomNum);
+  }
+
+  // Verifica se o novo PIN já está em uso por outro leitor cadastrado
+  const existingAccesses = securityConfig.readerAccesses || [];
+  for (const existing of existingAccesses) {
+    if (existing.id !== id && verifyPinHash(pinToAssign, existing.pinHash, existing.pinSalt)) {
+      res.status(409).json({
+        success: false,
+        error: 'Este PIN já está em uso por outro leitor cadastrado. Escolha outro código ou gere automaticamente.',
+      });
+      return;
+    }
+  }
+
+  // Também verifica contra o PIN mestre legado
+  if (verifyPinHash(pinToAssign, securityConfig.pinHash, securityConfig.pinSalt)) {
+    res.status(409).json({
+      success: false,
+      error: 'Este código coincide com o PIN mestre do sistema. Escolha um código diferente.',
+    });
+    return;
+  }
+
+  // Gera novo salt e hash criptográfico PBKDF2 (30.000 iterações)
+  const salt = crypto.randomBytes(16).toString('hex');
+  const hash = hashPin(pinToAssign, salt);
+
+  // Preserva integralmente id, nome, status, validade, histórico e perfil cadastral
+  target.pinHash = hash;
+  target.pinSalt = salt;
+
+  // Encerra qualquer sessão ativa anterior deste leitor (invalidação imediata)
+  for (const [token, sess] of activeReaderSessions.entries()) {
+    if (sess.accessId === id) {
+      activeReaderSessions.delete(token);
+    }
+  }
+
+  // Salva no arquivo local
+  saveSecurityConfig(securityConfig);
+
+  // Persiste no Cloud Firestore
+  try {
+    await firebaseServerStore.saveReaderAccess(target);
+  } catch (err: any) {
+    console.warn('[Firebase] Aviso ao salvar redefinição de PIN no Firestore:', err.message);
+  }
+
+  // Retorna o PIN em texto puro APENAS nesta resposta para visualização única do administrador (sem logs)
+  res.json({
+    success: true,
+    access: sanitizeReaderAccess(target),
+    pin: pinToAssign,
+    message: `PIN redefinido com sucesso para o leitor "${target.name}".`,
+  });
+});
+
+// 10.6 Limpar todos os cadastros de leitores (inclusive testes)
+app.delete('/api/admin/readers', requireAdminAuth, async (_req, res) => {
+  const count = (securityConfig.readerAccesses || []).length;
+  securityConfig.readerAccesses = [];
+
+  // Encerra todas as sessões ativas de leitores
+  activeReaderSessions.clear();
+
+  // Salva no arquivo local
+  saveSecurityConfig(securityConfig);
+
+  // Remove todos os registros no Cloud Firestore
+  let firestoreDeleted = 0;
+  try {
+    firestoreDeleted = await firebaseServerStore.clearAllReaderAccesses();
+  } catch (err: any) {
+    console.warn('[Firebase] Aviso ao limpar leitores no Firestore:', err.message);
+  }
+
+  res.json({
+    success: true,
+    count,
+    firestoreDeleted,
+    message: `Todos os ${count} cadastros de leitores foram removidos com sucesso.`,
+  });
+});
+
+// 10.7 Alterar permissões de livros e capítulos de um leitor (Liberado / Bloqueado)
+app.put('/api/admin/readers/:id/permissions', requireAdminAuth, async (req, res) => {
+  const { id } = req.params;
+  const { contentPermissions } = req.body || {};
+
+  const target = (securityConfig.readerAccesses || []).find((a) => a.id === id);
+  if (!target) {
+    res.status(404).json({
+      success: false,
+      error: 'Acesso de leitor não encontrado.',
+    });
+    return;
+  }
+
+  target.contentPermissions = contentPermissions || { books: {} };
+  saveSecurityConfig(securityConfig);
+
+  try {
+    await firebaseServerStore.saveReaderAccess(target);
+  } catch (err: any) {
+    console.warn('[Firebase] Aviso ao salvar permissões no Firestore:', err.message);
+  }
+
+  res.json({
+    success: true,
+    access: sanitizeReaderAccess(target),
+    message: `Permissões de livros e capítulos do leitor "${target.name}" atualizadas com sucesso!`,
   });
 });
 
