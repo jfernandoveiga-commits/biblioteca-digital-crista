@@ -77,7 +77,7 @@ export const DEFAULT_LIBRARY_FEATURES: LibraryFeaturesConfig = {
   readingProgress: true,
   bookmarks: true,
   search: true,
-  audioReading: true,
+  audioReading: false,
   themeToggle: true,
 };
 

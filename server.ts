@@ -59,7 +59,7 @@ const DEFAULT_FEATURES: LibraryFeaturesConfig = {
   readingProgress: true,
   bookmarks: true,
   search: true,
-  audioReading: true,
+  audioReading: false,
   themeToggle: true,
 };
 
@@ -202,6 +202,7 @@ function loadOrCreateSecurityConfig(): SecurityConfig {
         const features: LibraryFeaturesConfig = {
           ...DEFAULT_FEATURES,
           ...(parsed.features || {}),
+          audioReading: false,
         };
 
         const rawContentBooks = parsed.contentAvailability?.books || {};
@@ -228,21 +229,6 @@ function loadOrCreateSecurityConfig(): SecurityConfig {
         const readerAccesses: ReaderAccessRecord[] = Array.isArray(parsed.readerAccesses)
           ? parsed.readerAccesses
           : [];
-
-        // Se a lista estiver vazia e já houver um pinHash válido, cria o primeiro registro de acesso inicial
-        if (readerAccesses.length === 0 && parsed.pinHash && parsed.pinSalt) {
-          readerAccesses.push({
-            id: 'access-initial-default',
-            name: 'Acesso Padrão Inicial',
-            pinHash: parsed.pinHash,
-            pinSalt: parsed.pinSalt,
-            status: 'active',
-            createdAt: parsed.lastPinChangedAt || new Date().toISOString(),
-            expiresAt: null,
-            lastUsedAt: null,
-            notes: 'Acesso inicial configurado pelo sistema',
-          });
-        }
 
         const config: SecurityConfig = {
           pinHash: parsed.pinHash,
@@ -371,7 +357,9 @@ async function syncWithFirestore(): Promise<void> {
         securityConfig.features = {
           ...DEFAULT_FEATURES,
           ...(cloudConfig.features || {}),
+          audioReading: false,
         };
+        await syncSystemConfigToFirestore();
         const rawCloudBooks = cloudConfig.contentAvailability?.books || {};
         const cleanedCloudBooks: Record<string, any> = {};
         for (const [key, val] of Object.entries(rawCloudBooks)) {
@@ -858,19 +846,6 @@ app.post('/api/auth/verify-pin', (req, res) => {
     }
   }
 
-  // 2. Se não achou nos acessos individuais mas confere com o PIN legado geral
-  if (!matchedAccess && verifyPinHash(cleanPin, securityConfig.pinHash, securityConfig.pinSalt)) {
-    matchedAccess = {
-      id: 'access-general',
-      name: 'Acesso Geral',
-      pinHash: securityConfig.pinHash,
-      pinSalt: securityConfig.pinSalt,
-      status: 'active',
-      createdAt: securityConfig.lastPinChangedAt,
-      expiresAt: null,
-      lastUsedAt: null,
-    };
-  }
 
   // Se nenhum PIN conferiu: conta falha no rate limiter
   if (!matchedAccess) {

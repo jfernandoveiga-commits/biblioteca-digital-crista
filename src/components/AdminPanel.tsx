@@ -3243,7 +3243,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       {/* MODAL DE REDEFINIÇÃO DE PIN DO LEITOR */}
       {resetPinModal.isOpen && resetPinModal.reader && (
         <div
-          className="fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-200"
+          className="fixed inset-0 z-[70] bg-black/70 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-200"
           role="dialog"
           aria-modal="true"
         >
@@ -3393,7 +3393,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       {/* MODAL DE EXIBIÇÃO ÚNICA E SEGURA DO PIN CRIADO OU REDEFINIDO */}
       {createdPinModal.isOpen && (
         <div
-          className="fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-200"
+          className="fixed inset-0 z-[80] bg-black/70 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-200"
           role="dialog"
           aria-modal="true"
         >
@@ -3485,7 +3485,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       {/* MODAL DE CONFIRMAÇÃO DE AÇÃO CRÍTICA */}
       {confirmModal.isOpen && (
         <div
-          className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4"
+          className="fixed inset-0 z-[75] bg-black/60 backdrop-blur-xs flex items-center justify-center p-4"
           role="dialog"
           aria-modal="true"
         >
@@ -3568,14 +3568,25 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                   </p>
                 </div>
               </div>
-              <button
-                type="button"
-                onClick={() => setSelectedReaderDetails(null)}
-                className="p-1.5 rounded-lg text-stone-400 hover:text-stone-700 dark:hover:text-zinc-200 hover:bg-stone-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer"
-                title="Fechar ficha"
-              >
-                <X className="w-5 h-5" />
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => handleOpenResetPinModal(selectedReaderDetails)}
+                  className="px-3 py-1.5 rounded-xl text-xs font-semibold bg-amber-500 hover:bg-amber-600 text-white dark:bg-amber-500 dark:hover:bg-amber-400 dark:text-zinc-950 transition-colors cursor-pointer flex items-center gap-1.5 shadow-2xs"
+                  title="Redefinir PIN deste leitor"
+                >
+                  <KeyRound className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">Redefinir PIN</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSelectedReaderDetails(null)}
+                  className="p-1.5 rounded-lg text-stone-400 hover:text-stone-700 dark:hover:text-zinc-200 hover:bg-stone-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer"
+                  title="Fechar ficha"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
             </div>
 
             {/* Informações Pessoais */}

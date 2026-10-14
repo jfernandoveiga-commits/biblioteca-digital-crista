@@ -87,7 +87,7 @@ export const ReadingHeader: React.FC<ReadingHeaderProps> = ({
   const showBible = features ? features.integratedBible : true;
   const showSearch = features ? features.search : true;
   const showBookmarks = features ? features.bookmarks : true;
-  const showAudio = features ? features.audioReading : true;
+  const showAudio = features ? Boolean(features.audioReading) : false;
 
   // Cores dinâmicas para o cabeçalho baseadas no tema
   const themeStyles = {

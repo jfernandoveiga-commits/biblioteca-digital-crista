@@ -72,7 +72,7 @@ export const ChapterReader: React.FC<ChapterReaderProps> = ({
   // Verificações de permissão de funcionalidades com fallback seguro (true)
   const isSearchEnabled = features ? features.search : true;
   const isBookmarksEnabled = features ? features.bookmarks : true;
-  const isAudioEnabled = features ? features.audioReading : true;
+  const isAudioEnabled = features ? Boolean(features.audioReading) : false;
   const isReflectionEnabled = features ? features.reflectionQuestions : true;
   const isBibleEnabled = features ? features.integratedBible : true;
 

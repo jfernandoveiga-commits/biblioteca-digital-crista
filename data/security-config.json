@@ -16,73 +16,80 @@
     "readingProgress": true,
     "bookmarks": true,
     "search": true,
-    "audioReading": true,
+    "audioReading": false,
     "themeToggle": true
   },
   "contentAvailability": {
     "books": {
       "entre-a-cruz-e-o-mundo": {
-        "enabled": true,
         "chapters": {
-          "capitulo-1": true,
-          "capitulo-2": false
-        }
-      },
-      "e-ai-crente": {
-        "chapters": {
+          "capitulo-2": false,
           "capitulo-1": true
         },
         "enabled": true
+      },
+      "e-ai-crente": {
+        "enabled": true,
+        "chapters": {
+          "capitulo-1": true
+        }
       }
     }
   },
   "readerAccesses": [
     {
-      "id": "reader-1791893732551-e38689bb",
       "createdAt": "2026-10-13T12:15:32.551Z",
-      "lastUsedAt": "2026-10-13T12:29:28.634Z",
-      "name": "Ana Clara Carchano Garcia",
-      "pinSalt": "10b1eb7714981805d716333b3d0b89ce",
       "contentPermissions": {
         "books": {
           "e-ai-crente": {
-            "enabled": true,
             "chapters": {
-              "capitulo-1": true
-            }
+              "capitulo-1": false
+            },
+            "enabled": true
+          },
+          "entre-a-cruz-e-o-mundo": {
+            "chapters": {
+              "capitulo-1": true,
+              "capitulo-2": false
+            },
+            "enabled": true
           }
         }
       },
+      "lastUsedAt": "2026-10-14T10:18:38.374Z",
+      "name": "Ana Clara Carchano Garcia",
+      "updatedAt": "2026-10-13T12:32:48.325Z",
       "profile": null,
-      "pinHash": "da129db119fe791df855040168a69fffc4524d2beb8345d794576197cece8b33",
-      "hasProfile": false,
-      "notes": "Leitora teste",
-      "updatedAt": "2026-10-13T12:29:03.662Z",
       "expiresAt": null,
-      "status": "active"
+      "id": "reader-1791893732551-e38689bb",
+      "status": "active",
+      "pinHash": "f898196e489d7eae3019037515ba4b65196e2e10a018404075855a03feda512c",
+      "notes": "Leitora teste",
+      "pinSalt": "e09943d4275488b53ba38c73744803f9",
+      "hasProfile": false
     },
     {
-      "profile": {
-        "phoneFormatted": "(19) 98102-6699",
-        "gender": "Masculino",
-        "fullName": "Fernando Veiga",
-        "phone": "19981026699",
-        "maritalStatus": "Casado(a)",
-        "birthDate": "1967-04-02",
-        "updatedAt": "2026-10-13T12:12:21.075Z",
-        "registeredAt": "2026-10-13T12:12:21.075Z"
-      },
       "pinHash": "19d7779c0ba000659d7dc1316edcc846bd0731e52911ac724e48fc198899916b",
       "notes": "Acesso inicial configurado pelo sistema",
-      "id": "access-initial-default",
+      "lastUsedAt": "2026-10-14T10:18:51.027Z",
+      "createdAt": "2026-10-10T16:41:50.949Z",
+      "name": "Fernando Veiga",
       "expiresAt": null,
       "updatedAt": "2026-10-13T12:12:21.076Z",
-      "pinSalt": "dc41e63cfc00c20311f1edd28cff99c3",
-      "lastUsedAt": "2026-10-13T12:11:37.109Z",
       "hasProfile": true,
-      "name": "Fernando Veiga",
-      "createdAt": "2026-10-10T16:41:50.949Z",
-      "status": "active"
+      "profile": {
+        "birthDate": "1967-04-02",
+        "updatedAt": "2026-10-13T12:12:21.075Z",
+        "registeredAt": "2026-10-13T12:12:21.075Z",
+        "phone": "19981026699",
+        "maritalStatus": "Casado(a)",
+        "gender": "Masculino",
+        "fullName": "Fernando Veiga",
+        "phoneFormatted": "(19) 98102-6699"
+      },
+      "status": "active",
+      "id": "access-initial-default",
+      "pinSalt": "dc41e63cfc00c20311f1edd28cff99c3"
     }
   ]
 }
