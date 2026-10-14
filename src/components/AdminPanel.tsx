@@ -73,7 +73,7 @@ interface AdminPanelProps {
   onNavigateToLibrary: () => void;
 }
 
-type AdminTab = 'readers' | 'features' | 'books' | 'security' | 'pwa';
+type AdminTab = 'readers' | 'features' | 'books' | 'security' | 'credentials' | 'pwa';
 
 export const AdminPanel: React.FC<AdminPanelProps> = ({
   theme = 'cream',
@@ -176,6 +176,16 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const [showNewPin, setShowNewPin] = useState<boolean>(false);
   const [revokeOnPinChange, setRevokeOnPinChange] = useState<boolean>(true);
   const [isUpdatingPin, setIsUpdatingPin] = useState<boolean>(false);
+
+  // Formulário de Alteração de Credenciais do Administrador (Login e Senha)
+  const [currentAdminPasswordInput, setCurrentAdminPasswordInput] = useState<string>('');
+  const [newAdminUsernameInput, setNewAdminUsernameInput] = useState<string>('');
+  const [newAdminPasswordInput, setNewAdminPasswordInput] = useState<string>('');
+  const [confirmAdminPasswordInput, setConfirmAdminPasswordInput] = useState<string>('');
+  const [showAdminPassToggle, setShowAdminPassToggle] = useState<boolean>(false);
+  const [isUpdatingCredentials, setIsUpdatingCredentials] = useState<boolean>(false);
+  const [credentialsSuccessMessage, setCredentialsSuccessMessage] = useState<string | null>(null);
+  const [credentialsErrorMessage, setCredentialsErrorMessage] = useState<string | null>(null);
 
   // Estado das Funcionalidades da Biblioteca
   const [features, setFeatures] = useState<LibraryFeaturesConfig>(DEFAULT_LIBRARY_FEATURES);
@@ -801,6 +811,69 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         }
       },
     });
+  // Alteração de Login e Senha do Administrador
+  const handleUpdateAdminCredentials = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setCredentialsSuccessMessage(null);
+    setCredentialsErrorMessage(null);
+
+    if (!currentAdminPasswordInput.trim()) {
+      setCredentialsErrorMessage('Por favor, informe a senha atual para confirmar a alteração.');
+      return;
+    }
+
+    const cleanUser = newAdminUsernameInput.trim();
+    const cleanPass = newAdminPasswordInput.trim();
+    const cleanConfirm = confirmAdminPasswordInput.trim();
+
+    if (!cleanUser && !cleanPass) {
+      setCredentialsErrorMessage('Informe um novo nome de usuário ou uma nova senha para atualizar.');
+      return;
+    }
+
+    if (cleanUser && cleanUser.length < 3) {
+      setCredentialsErrorMessage('O novo nome de usuário deve conter no mínimo 3 caracteres.');
+      return;
+    }
+
+    if (cleanPass) {
+      if (cleanPass.length < 6) {
+        setCredentialsErrorMessage('A nova senha deve conter no mínimo 6 caracteres.');
+        return;
+      }
+      if (cleanPass !== cleanConfirm) {
+        setCredentialsErrorMessage('A confirmação da nova senha não confere com a nova senha digitada.');
+        return;
+      }
+    }
+
+    setIsUpdatingCredentials(true);
+    try {
+      const res = await adminAuthService.updateCredentials({
+        currentPassword: currentAdminPasswordInput.trim(),
+        newUsername: cleanUser || undefined,
+        newPassword: cleanPass || undefined,
+        confirmNewPassword: cleanConfirm || undefined,
+      });
+
+      if (res.success) {
+        setCredentialsSuccessMessage(res.message || 'Credenciais atualizadas com sucesso!');
+        if (res.username) {
+          setAdminUsername(res.username);
+        }
+        setCurrentAdminPasswordInput('');
+        setNewAdminPasswordInput('');
+        setConfirmAdminPasswordInput('');
+        setNewAdminUsernameInput('');
+        await fetchStatus();
+      } else {
+        setCredentialsErrorMessage(res.error || 'Falha ao atualizar credenciais.');
+      }
+    } catch {
+      setCredentialsErrorMessage('Erro de conexão ao atualizar credenciais do administrador.');
+    } finally {
+      setIsUpdatingCredentials(false);
+    }
   };
 
   // Bloqueio/Desbloqueio da Biblioteca com Confirmação
@@ -1281,11 +1354,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                   required
                   value={loginUser}
                   onChange={(e) => setLoginUser(e.target.value)}
-                  placeholder="Ex: admin"
                   className={`w-full px-3.5 py-2.5 rounded-xl text-sm border transition-colors outline-hidden focus:ring-2 focus:ring-amber-500/40 font-sans ${
                     isDark
-                      ? 'bg-zinc-800/80 border-zinc-700 text-zinc-100 placeholder:text-zinc-500 focus:border-amber-400'
-                      : 'bg-stone-50 border-stone-300 text-stone-900 placeholder:text-stone-400 focus:border-stone-500'
+                      ? 'bg-zinc-800/80 border-zinc-700 text-zinc-100 focus:border-amber-400'
+                      : 'bg-stone-50 border-stone-300 text-stone-900 focus:border-stone-500'
                   }`}
                 />
               </div>
@@ -1301,11 +1373,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                     required
                     value={loginPassword}
                     onChange={(e) => setLoginPassword(e.target.value)}
-                    placeholder="Digite a senha administrativa"
                     className={`w-full pl-3.5 pr-10 py-2.5 rounded-xl text-sm border transition-colors outline-hidden focus:ring-2 focus:ring-amber-500/40 font-sans ${
                       isDark
-                        ? 'bg-zinc-800/80 border-zinc-700 text-zinc-100 placeholder:text-zinc-500 focus:border-amber-400'
-                        : 'bg-stone-50 border-stone-300 text-stone-900 placeholder:text-stone-400 focus:border-stone-500'
+                        ? 'bg-zinc-800/80 border-zinc-700 text-zinc-100 focus:border-amber-400'
+                        : 'bg-stone-50 border-stone-300 text-stone-900 focus:border-stone-500'
                     }`}
                   />
                   <button
@@ -1387,9 +1458,20 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                 <h1 className="text-sm font-serif font-bold text-stone-900 dark:text-zinc-100 leading-tight">
                   Painel Administrativo
                 </h1>
-                <p className="text-[11px] text-stone-400 dark:text-zinc-400 font-sans">
-                  Sessão ativa: <strong className="font-semibold text-stone-700 dark:text-zinc-200">{adminUsername || 'Administrador'}</strong>
-                </p>
+                <div className="flex items-center gap-2 mt-0.5">
+                  <p className="text-[11px] text-stone-400 dark:text-zinc-400 font-sans">
+                    Sessão ativa: <strong className="font-semibold text-stone-700 dark:text-zinc-200">{adminUsername || 'Administrador'}</strong>
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('credentials')}
+                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-semibold border border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-400 hover:bg-amber-500/20 transition-colors cursor-pointer"
+                    title="Alterar login e senha do administrador"
+                  >
+                    <KeyRound className="w-3 h-3" />
+                    <span>Alterar Login/Senha</span>
+                  </button>
+                </div>
               </div>
             </div>
           </div>
@@ -1433,6 +1515,20 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                 {readers.length}
               </span>
             )}
+          </button>
+
+          <button
+            onClick={() => setActiveTab('credentials')}
+            className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-medium transition-colors whitespace-nowrap cursor-pointer ${
+              activeTab === 'credentials'
+                ? isDark
+                  ? 'bg-amber-500/20 text-amber-300 font-semibold border border-amber-500/30'
+                  : 'bg-stone-900 text-stone-50 font-semibold'
+                : 'text-stone-600 dark:text-zinc-400 hover:bg-black/5 dark:hover:bg-zinc-800'
+            }`}
+          >
+            <KeyRound className="w-3.5 h-3.5" />
+            <span>Alterar Login e Senha</span>
           </button>
 
           <button
@@ -1716,11 +1812,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                       required
                       value={newReaderName}
                       onChange={(e) => setNewReaderName(e.target.value)}
-                      placeholder="Ex: João da Silva ou Grupo de Jovens"
                       className={`w-full px-3.5 py-2.5 rounded-xl text-sm border transition-colors outline-hidden focus:ring-2 focus:ring-amber-500/40 ${
                         isDark
-                          ? 'bg-zinc-800 border-zinc-700 text-zinc-100 placeholder:text-zinc-500 focus:border-amber-400'
-                          : 'bg-stone-50 border-stone-300 text-stone-900 placeholder:text-stone-400 focus:border-stone-500'
+                          ? 'bg-zinc-800 border-zinc-700 text-zinc-100 focus:border-amber-400'
+                          : 'bg-stone-50 border-stone-300 text-stone-900 focus:border-stone-500'
                       }`}
                     />
                   </div>
@@ -1776,11 +1871,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                       required
                       value={customPinInput}
                       onChange={(e) => setCustomPinInput(e.target.value)}
-                      placeholder="Ex: 849201"
                       className={`w-full max-w-sm px-3.5 py-2.5 rounded-xl text-sm font-mono tracking-widest border transition-colors outline-hidden focus:ring-2 focus:ring-amber-500/40 ${
                         isDark
-                          ? 'bg-zinc-800 border-zinc-700 text-zinc-100 placeholder:text-zinc-500 focus:border-amber-400'
-                          : 'bg-white border-stone-300 text-stone-900 placeholder:text-stone-400 focus:border-stone-500'
+                          ? 'bg-zinc-800 border-zinc-700 text-zinc-100 focus:border-amber-400'
+                          : 'bg-white border-stone-300 text-stone-900 focus:border-stone-500'
                       }`}
                     />
                     <p className="text-[11px] text-stone-500 dark:text-zinc-400 mt-1.5">
@@ -1836,11 +1930,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                       type="text"
                       value={readerNotes}
                       onChange={(e) => setReaderNotes(e.target.value)}
-                      placeholder="Ex: Aluno da EBD / Turma 2"
                       className={`w-full px-3.5 py-2.5 rounded-xl text-sm border transition-colors outline-hidden focus:ring-2 focus:ring-amber-500/40 ${
                         isDark
-                          ? 'bg-zinc-800 border-zinc-700 text-zinc-100 placeholder:text-zinc-500 focus:border-amber-400'
-                          : 'bg-stone-50 border-stone-300 text-stone-900 placeholder:text-stone-400 focus:border-stone-500'
+                          ? 'bg-zinc-800 border-zinc-700 text-zinc-100 focus:border-amber-400'
+                          : 'bg-stone-50 border-stone-300 text-stone-900 focus:border-stone-500'
                       }`}
                     />
                   </div>
@@ -1986,11 +2079,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                       type="text"
                       value={searchTerm}
                       onChange={(e) => setSearchTerm(e.target.value)}
-                      placeholder="Buscar por nome ou WhatsApp..."
                       className={`pl-8 pr-3 py-1.5 rounded-xl text-xs border transition-colors outline-hidden ${
                         isDark
-                          ? 'bg-zinc-800 border-zinc-700 text-zinc-100 placeholder:text-zinc-500'
-                          : 'bg-stone-50 border-stone-300 text-stone-900 placeholder:text-stone-400'
+                          ? 'bg-zinc-800 border-zinc-700 text-zinc-100'
+                          : 'bg-stone-50 border-stone-300 text-stone-900'
                       }`}
                     />
                   </div>
@@ -2961,7 +3053,182 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
               </div>
             </div>
 
-            {/* 2. ALTERAÇÃO DO PIN DOS LEITORES */}
+            {/* 2. ALTERAÇÃO DE LOGIN E SENHA DO ADMINISTRADOR */}
+            <div
+              className={`p-6 rounded-2xl border transition-all ${
+                isDark ? 'bg-zinc-900/80 border-zinc-800' : 'bg-white border-stone-200 shadow-xs'
+              }`}
+            >
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-stone-100 dark:border-zinc-800">
+                <div>
+                  <div className="flex items-center gap-2 mb-1">
+                    <ShieldCheck className="w-5 h-5 text-amber-600 dark:text-amber-400" />
+                    <h2 className="text-base font-serif font-bold text-stone-900 dark:text-zinc-50">
+                      Alterar Login e Senha do Administrador
+                    </h2>
+                  </div>
+                  <p className="text-xs text-stone-500 dark:text-zinc-400 font-sans">
+                    Defina um novo nome de usuário (login) ou uma nova senha para acessar o painel administrativo.
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-sans text-stone-500 dark:text-zinc-400">
+                    Login atual:
+                  </span>
+                  <span className="font-mono font-bold text-xs px-2.5 py-1 rounded-lg bg-stone-100 dark:bg-zinc-800 text-stone-800 dark:text-zinc-200 border border-stone-200 dark:border-zinc-700">
+                    {adminUsername || 'admin'}
+                  </span>
+                </div>
+              </div>
+
+              {credentialsSuccessMessage && (
+                <div className="mt-4 p-3.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-900/50 text-emerald-800 dark:text-emerald-300 text-xs font-sans flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
+                  <span>{credentialsSuccessMessage}</span>
+                </div>
+              )}
+
+              {credentialsErrorMessage && (
+                <div className="mt-4 p-3.5 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/50 text-rose-800 dark:text-rose-300 text-xs font-sans flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4 shrink-0 text-rose-600 dark:text-rose-400" />
+                  <span>{credentialsErrorMessage}</span>
+                </div>
+              )}
+
+              <form onSubmit={handleUpdateAdminCredentials} className="space-y-4 max-w-2xl mt-5">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {/* Novo Nome de Usuário / Login */}
+                  <div>
+                    <label className="block text-xs font-medium text-stone-700 dark:text-zinc-300 mb-1.5 font-sans">
+                      Novo Nome de Usuário (Login)
+                    </label>
+                    <input
+                      type="text"
+                      autoComplete="username"
+                      value={newAdminUsernameInput}
+                      onChange={(e) => {
+                        setNewAdminUsernameInput(e.target.value);
+                        setCredentialsErrorMessage(null);
+                      }}
+                      className={`w-full px-3.5 py-2.5 rounded-xl text-sm border font-sans transition-colors outline-hidden focus:ring-2 focus:ring-amber-500/40 ${
+                        isDark
+                          ? 'bg-zinc-800 border-zinc-700 text-zinc-100 focus:border-amber-400'
+                          : 'bg-stone-50 border-stone-300 text-stone-900 focus:border-stone-500'
+                      }`}
+                    />
+                    <span className="text-[10px] text-stone-500 dark:text-zinc-400 mt-1 block">
+                      Deixe em branco caso queira manter o login atual ({adminUsername || 'admin'}).
+                    </span>
+                  </div>
+
+                  {/* Senha Atual */}
+                  <div>
+                    <label className="block text-xs font-medium text-stone-700 dark:text-zinc-300 mb-1.5 font-sans">
+                      Senha Atual <span className="text-rose-500">*</span>
+                    </label>
+                    <div className="relative">
+                      <input
+                        type={showAdminPassToggle ? 'text' : 'password'}
+                        autoComplete="current-password"
+                        required
+                        value={currentAdminPasswordInput}
+                        onChange={(e) => {
+                          setCurrentAdminPasswordInput(e.target.value);
+                          setCredentialsErrorMessage(null);
+                        }}
+                        className={`w-full pl-3.5 pr-10 py-2.5 rounded-xl text-sm border font-sans transition-colors outline-hidden focus:ring-2 focus:ring-amber-500/40 ${
+                          isDark
+                            ? 'bg-zinc-800 border-zinc-700 text-zinc-100 focus:border-amber-400'
+                            : 'bg-stone-50 border-stone-300 text-stone-900 focus:border-stone-500'
+                        }`}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowAdminPassToggle(!showAdminPassToggle)}
+                        tabIndex={-1}
+                        className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 text-stone-400 hover:text-stone-600 dark:hover:text-zinc-200 transition-colors cursor-pointer"
+                        aria-label={showAdminPassToggle ? 'Ocultar senhas' : 'Exibir senhas'}
+                      >
+                        {showAdminPassToggle ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                    </div>
+                    <span className="text-[10px] text-stone-500 dark:text-zinc-400 mt-1 block">
+                      Obrigatória para confirmar a alteração de segurança.
+                    </span>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1">
+                  {/* Nova Senha */}
+                  <div>
+                    <label className="block text-xs font-medium text-stone-700 dark:text-zinc-300 mb-1.5 font-sans">
+                      Nova Senha Administrativa
+                    </label>
+                    <input
+                      type={showAdminPassToggle ? 'text' : 'password'}
+                      autoComplete="new-password"
+                      value={newAdminPasswordInput}
+                      onChange={(e) => {
+                        setNewAdminPasswordInput(e.target.value);
+                        setCredentialsErrorMessage(null);
+                      }}
+                      className={`w-full px-3.5 py-2.5 rounded-xl text-sm border font-sans transition-colors outline-hidden focus:ring-2 focus:ring-amber-500/40 ${
+                        isDark
+                          ? 'bg-zinc-800 border-zinc-700 text-zinc-100 focus:border-amber-400'
+                          : 'bg-stone-50 border-stone-300 text-stone-900 focus:border-stone-500'
+                      }`}
+                    />
+                    <span className="text-[10px] text-stone-500 dark:text-zinc-400 mt-1 block">
+                      Mínimo de 6 caracteres. Deixe em branco se for alterar apenas o login.
+                    </span>
+                  </div>
+
+                  {/* Confirmar Nova Senha */}
+                  <div>
+                    <label className="block text-xs font-medium text-stone-700 dark:text-zinc-300 mb-1.5 font-sans">
+                      Confirmar Nova Senha
+                    </label>
+                    <input
+                      type={showAdminPassToggle ? 'text' : 'password'}
+                      autoComplete="new-password"
+                      value={confirmAdminPasswordInput}
+                      onChange={(e) => {
+                        setConfirmAdminPasswordInput(e.target.value);
+                        setCredentialsErrorMessage(null);
+                      }}
+                      className={`w-full px-3.5 py-2.5 rounded-xl text-sm border font-sans transition-colors outline-hidden focus:ring-2 focus:ring-amber-500/40 ${
+                        isDark
+                          ? 'bg-zinc-800 border-zinc-700 text-zinc-100 focus:border-amber-400'
+                          : 'bg-stone-50 border-stone-300 text-stone-900 focus:border-stone-500'
+                      }`}
+                    />
+                  </div>
+                </div>
+
+                <div className="pt-2">
+                  <button
+                    type="submit"
+                    disabled={isUpdatingCredentials || !currentAdminPasswordInput.trim()}
+                    className="px-5 py-2.5 rounded-xl bg-stone-900 hover:bg-stone-800 dark:bg-amber-500 dark:hover:bg-amber-400 text-stone-50 dark:text-zinc-950 text-xs font-semibold transition-all shadow-xs disabled:opacity-50 flex items-center gap-2 cursor-pointer"
+                  >
+                    {isUpdatingCredentials ? (
+                      <>
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        <span>Salvando Credenciais...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Check className="w-3.5 h-3.5" />
+                        <span>Salvar Novas Credenciais</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </form>
+            </div>
+
+            {/* 3. ALTERAÇÃO DO PIN DOS LEITORES */}
             <div
               className={`p-6 rounded-2xl border transition-all ${
                 isDark ? 'bg-zinc-900/80 border-zinc-800' : 'bg-white border-stone-200 shadow-xs'
@@ -2988,12 +3255,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                         type={showNewPin ? 'text' : 'password'}
                         value={newPin}
                         onChange={(e) => setNewPin(e.target.value)}
-                        placeholder="Ex: 2025"
                         required
                         className={`w-full pl-3.5 pr-10 py-2.5 rounded-xl text-sm border font-mono tracking-wider transition-colors outline-hidden focus:ring-2 focus:ring-amber-500/40 ${
                           isDark
-                            ? 'bg-zinc-800 border-zinc-700 text-zinc-100 placeholder:text-zinc-500 focus:border-amber-400'
-                            : 'bg-stone-50 border-stone-300 text-stone-900 placeholder:text-stone-400 focus:border-stone-500'
+                            ? 'bg-zinc-800 border-zinc-700 text-zinc-100 focus:border-amber-400'
+                            : 'bg-stone-50 border-stone-300 text-stone-900 focus:border-stone-500'
                         }`}
                       />
                       <button
@@ -3016,12 +3282,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                       type={showNewPin ? 'text' : 'password'}
                       value={confirmPin}
                       onChange={(e) => setConfirmPin(e.target.value)}
-                      placeholder="Repita o novo PIN"
                       required
                       className={`w-full px-3.5 py-2.5 rounded-xl text-sm border font-mono tracking-wider transition-colors outline-hidden focus:ring-2 focus:ring-amber-500/40 ${
                         isDark
-                          ? 'bg-zinc-800 border-zinc-700 text-zinc-100 placeholder:text-zinc-500 focus:border-amber-400'
-                          : 'bg-stone-50 border-stone-300 text-stone-900 placeholder:text-stone-400 focus:border-stone-500'
+                          ? 'bg-zinc-800 border-zinc-700 text-zinc-100 focus:border-amber-400'
+                          : 'bg-stone-50 border-stone-300 text-stone-900 focus:border-stone-500'
                       }`}
                     />
                   </div>
@@ -3130,6 +3395,213 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
               </div>
             </div>
           </div>
+        )}
+
+        {/* =========================================================================
+            ABA: ALTERAÇÃO DE LOGIN E SENHA DO ADMINISTRADOR
+            ========================================================================= */}
+        {activeTab === 'credentials' && (
+          <section className="space-y-6 animate-in fade-in duration-200 font-sans">
+            {/* Introdução e Status das Credenciais */}
+            <div
+              className={`p-6 rounded-2xl border transition-all ${
+                isDark ? 'bg-zinc-900/80 border-zinc-800' : 'bg-white border-stone-200 shadow-xs'
+              }`}
+            >
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-stone-100 dark:border-zinc-800">
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 rounded-xl bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
+                    <KeyRound className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <h2 className="text-base sm:text-lg font-serif font-bold text-stone-900 dark:text-zinc-50">
+                      Alterar Login e Senha do Administrador
+                    </h2>
+                    <p className="text-xs text-stone-500 dark:text-zinc-400 font-sans mt-0.5">
+                      Atualize seu usuário de login e/ou sua senha de acesso com criptografia e persistência no servidor.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-sans text-stone-500 dark:text-zinc-400">
+                    Login atual:
+                  </span>
+                  <span className="font-mono font-bold text-xs px-3 py-1.5 rounded-lg bg-stone-100 dark:bg-zinc-800 text-stone-800 dark:text-zinc-200 border border-stone-200 dark:border-zinc-700">
+                    {adminUsername || 'admin'}
+                  </span>
+                </div>
+              </div>
+
+              {credentialsSuccessMessage && (
+                <div className="mt-4 p-3.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-900/50 text-emerald-800 dark:text-emerald-300 text-xs font-sans flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
+                  <span>{credentialsSuccessMessage}</span>
+                </div>
+              )}
+
+              {credentialsErrorMessage && (
+                <div className="mt-4 p-3.5 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/50 text-rose-800 dark:text-rose-300 text-xs font-sans flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4 shrink-0 text-rose-600 dark:text-rose-400" />
+                  <span>{credentialsErrorMessage}</span>
+                </div>
+              )}
+
+              <form onSubmit={handleUpdateAdminCredentials} className="space-y-4 max-w-2xl mt-5">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {/* Novo Nome de Usuário / Login */}
+                  <div>
+                    <label className="block text-xs font-medium text-stone-700 dark:text-zinc-300 mb-1.5 font-sans">
+                      Novo Nome de Usuário (Login)
+                    </label>
+                    <input
+                      type="text"
+                      autoComplete="username"
+                      value={newAdminUsernameInput}
+                      onChange={(e) => {
+                        setNewAdminUsernameInput(e.target.value);
+                        setCredentialsErrorMessage(null);
+                      }}
+                      className={`w-full px-3.5 py-2.5 rounded-xl text-sm border font-sans transition-colors outline-hidden focus:ring-2 focus:ring-amber-500/40 ${
+                        isDark
+                          ? 'bg-zinc-800 border-zinc-700 text-zinc-100 focus:border-amber-400'
+                          : 'bg-stone-50 border-stone-300 text-stone-900 focus:border-stone-500'
+                      }`}
+                    />
+                    <span className="text-[10px] text-stone-500 dark:text-zinc-400 mt-1 block">
+                      Deixe em branco caso queira manter o login atual ({adminUsername || 'admin'}).
+                    </span>
+                  </div>
+
+                  {/* Senha Atual */}
+                  <div>
+                    <label className="block text-xs font-medium text-stone-700 dark:text-zinc-300 mb-1.5 font-sans">
+                      Senha Atual <span className="text-rose-500">*</span>
+                    </label>
+                    <div className="relative">
+                      <input
+                        type={showAdminPassToggle ? 'text' : 'password'}
+                        autoComplete="current-password"
+                        required
+                        value={currentAdminPasswordInput}
+                        onChange={(e) => {
+                          setCurrentAdminPasswordInput(e.target.value);
+                          setCredentialsErrorMessage(null);
+                        }}
+                        className={`w-full pl-3.5 pr-10 py-2.5 rounded-xl text-sm border font-sans transition-colors outline-hidden focus:ring-2 focus:ring-amber-500/40 ${
+                          isDark
+                            ? 'bg-zinc-800 border-zinc-700 text-zinc-100 focus:border-amber-400'
+                            : 'bg-stone-50 border-stone-300 text-stone-900 focus:border-stone-500'
+                        }`}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowAdminPassToggle(!showAdminPassToggle)}
+                        tabIndex={-1}
+                        className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 text-stone-400 hover:text-stone-600 dark:hover:text-zinc-200 transition-colors cursor-pointer"
+                        aria-label={showAdminPassToggle ? 'Ocultar senhas' : 'Exibir senhas'}
+                      >
+                        {showAdminPassToggle ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                    </div>
+                    <span className="text-[10px] text-stone-500 dark:text-zinc-400 mt-1 block">
+                      Obrigatória para autorizar a alteração de segurança.
+                    </span>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1">
+                  {/* Nova Senha */}
+                  <div>
+                    <label className="block text-xs font-medium text-stone-700 dark:text-zinc-300 mb-1.5 font-sans">
+                      Nova Senha Administrativa
+                    </label>
+                    <input
+                      type={showAdminPassToggle ? 'text' : 'password'}
+                      autoComplete="new-password"
+                      value={newAdminPasswordInput}
+                      onChange={(e) => {
+                        setNewAdminPasswordInput(e.target.value);
+                        setCredentialsErrorMessage(null);
+                      }}
+                      className={`w-full px-3.5 py-2.5 rounded-xl text-sm border font-sans transition-colors outline-hidden focus:ring-2 focus:ring-amber-500/40 ${
+                        isDark
+                          ? 'bg-zinc-800 border-zinc-700 text-zinc-100 focus:border-amber-400'
+                          : 'bg-stone-50 border-stone-300 text-stone-900 focus:border-stone-500'
+                      }`}
+                    />
+                    <span className="text-[10px] text-stone-500 dark:text-zinc-400 mt-1 block">
+                      Mínimo de 6 caracteres. Deixe em branco se for alterar apenas o login.
+                    </span>
+                  </div>
+
+                  {/* Confirmar Nova Senha */}
+                  <div>
+                    <label className="block text-xs font-medium text-stone-700 dark:text-zinc-300 mb-1.5 font-sans">
+                      Confirmar Nova Senha
+                    </label>
+                    <input
+                      type={showAdminPassToggle ? 'text' : 'password'}
+                      autoComplete="new-password"
+                      value={confirmAdminPasswordInput}
+                      onChange={(e) => {
+                        setConfirmAdminPasswordInput(e.target.value);
+                        setCredentialsErrorMessage(null);
+                      }}
+                      className={`w-full px-3.5 py-2.5 rounded-xl text-sm border font-sans transition-colors outline-hidden focus:ring-2 focus:ring-amber-500/40 ${
+                        isDark
+                          ? 'bg-zinc-800 border-zinc-700 text-zinc-100 focus:border-amber-400'
+                          : 'bg-stone-50 border-stone-300 text-stone-900 focus:border-stone-500'
+                      }`}
+                    />
+                  </div>
+                </div>
+
+                <div className="pt-2">
+                  <button
+                    type="submit"
+                    disabled={isUpdatingCredentials || !currentAdminPasswordInput.trim()}
+                    className="px-5 py-2.5 rounded-xl bg-stone-900 hover:bg-stone-800 dark:bg-amber-500 dark:hover:bg-amber-400 text-stone-50 dark:text-zinc-950 text-xs font-semibold transition-all shadow-xs disabled:opacity-50 flex items-center gap-2 cursor-pointer"
+                  >
+                    {isUpdatingCredentials ? (
+                      <>
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        <span>Salvando Credenciais...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Check className="w-3.5 h-3.5" />
+                        <span>Salvar Novas Credenciais</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </form>
+            </div>
+
+            {/* Cartão Informativo de Proteção e Criptografia */}
+            <div
+              className={`p-5 rounded-2xl border transition-all text-xs space-y-3 ${
+                isDark ? 'bg-zinc-900/40 border-zinc-800 text-zinc-300' : 'bg-stone-50/70 border-stone-200 text-stone-700'
+              }`}
+            >
+              <div className="flex items-center gap-2 font-semibold text-stone-900 dark:text-zinc-100">
+                <ShieldCheck className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                <span>Segurança e Persistência das Credenciais</span>
+              </div>
+              <ul className="space-y-1.5 list-disc list-inside text-stone-600 dark:text-zinc-400 font-sans leading-relaxed">
+                <li>
+                  As senhas são protegidas com <strong>hash PBKDF2 (SHA-512)</strong> com 30.000 iterações e salt criptográfico individual de 128 bits.
+                </li>
+                <li>
+                  Suas credenciais são salvas permanentemente no disco e sincronizadas de forma segura no <strong>Firebase Cloud Firestore</strong>.
+                </li>
+                <li>
+                  Após atualizar as credenciais, sua sessão permanece ativa automaticamente sem interrupções.
+                </li>
+              </ul>
+            </div>
+          </section>
         )}
 
         {/* =========================================================================
@@ -3330,7 +3802,6 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                     onChange={(e) =>
                       setResetPinModal((prev) => ({ ...prev, customPin: e.target.value, error: null }))
                     }
-                    placeholder="Ex: 582914 ou leitor2026"
                     className="w-full px-3.5 py-2.5 rounded-xl border border-stone-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-stone-900 dark:text-zinc-100 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-amber-500"
                     maxLength={12}
                     autoFocus

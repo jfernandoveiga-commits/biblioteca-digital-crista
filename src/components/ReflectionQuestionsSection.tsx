@@ -301,7 +301,6 @@ export const ReflectionQuestionsSection: React.FC<ReflectionQuestionsSectionProp
                     id={`textarea-reflection-${qIdx}`}
                     value={answerText}
                     onChange={(e) => handleTextChange(qIdx, e.target.value)}
-                    placeholder="Escreva aqui suas reflexões, respostas ou aprendizados..."
                     rows={4}
                     className={`w-full p-3 sm:p-4 rounded-xl border focus:outline-hidden resize-y font-serif transition-colors ${textareaStyles} ${fontSizeClasses}`}
                   />

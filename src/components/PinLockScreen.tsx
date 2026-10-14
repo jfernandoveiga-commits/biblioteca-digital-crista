@@ -161,11 +161,10 @@ export const PinLockScreen: React.FC<PinLockScreenProps> = ({
                     }
                   }}
                   disabled={isLoading || lockoutSeconds > 0}
-                  placeholder="Digite os dígitos do PIN"
                   className={`w-full pl-10 pr-12 py-3 rounded-xl text-base tracking-widest font-mono text-center sm:text-left transition-all outline-none border ${
                     isDark
-                      ? 'bg-zinc-800/90 text-zinc-100 border-zinc-700 focus:border-amber-400/70 focus:ring-2 focus:ring-amber-400/20 placeholder:text-zinc-600'
-                      : 'bg-stone-50/80 text-stone-900 border-stone-300 focus:border-stone-600 focus:ring-2 focus:ring-stone-400/20 placeholder:text-stone-400'
+                      ? 'bg-zinc-800/90 text-zinc-100 border-zinc-700 focus:border-amber-400/70 focus:ring-2 focus:ring-amber-400/20'
+                      : 'bg-stone-50/80 text-stone-900 border-stone-300 focus:border-stone-600 focus:ring-2 focus:ring-stone-400/20'
                   } ${
                     lockoutSeconds > 0
                       ? 'opacity-60 cursor-not-allowed border-rose-300 dark:border-rose-800'

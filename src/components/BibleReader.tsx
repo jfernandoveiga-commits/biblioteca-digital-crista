@@ -522,10 +522,9 @@ export const BibleReader: React.FC<BibleReaderProps> = ({
                 <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 opacity-50 dark:opacity-80 dark:text-zinc-300" />
                 <input
                   type="text"
-                  placeholder="Buscar livro..."
                   value={bookSearch}
                   onChange={(e) => setBookSearch(e.target.value)}
-                  className="w-full pl-8 pr-3 py-1.5 rounded-lg bg-black/5 dark:bg-zinc-800/90 dark:text-zinc-100 dark:border-zinc-700 dark:placeholder:text-zinc-400 border border-transparent focus:border-stone-400 dark:focus:border-amber-400 text-xs focus:outline-hidden"
+                  className="w-full pl-8 pr-3 py-1.5 rounded-lg bg-black/5 dark:bg-zinc-800/90 dark:text-zinc-100 dark:border-zinc-700 border border-transparent focus:border-stone-400 dark:focus:border-amber-400 text-xs focus:outline-hidden"
                 />
               </div>
             </div>

@@ -164,11 +164,10 @@ export const ReadingHeader: React.FC<ReadingHeaderProps> = ({
                 autoFocus
                 value={searchQuery}
                 onChange={(e) => onSearchChange?.(e.target.value)}
-                placeholder="Pesquisar neste capítulo..."
                 className={`w-full pl-8 pr-20 py-1.5 rounded-lg text-xs border outline-hidden transition-colors ${
                   theme === 'dark'
-                    ? 'bg-zinc-800 border-zinc-700 text-zinc-100 placeholder:text-zinc-500 focus:border-amber-400'
-                    : 'bg-white border-stone-300 text-stone-900 placeholder:text-stone-400 focus:border-stone-500'
+                    ? 'bg-zinc-800 border-zinc-700 text-zinc-100 focus:border-amber-400'
+                    : 'bg-white border-stone-300 text-stone-900 focus:border-stone-500'
                 }`}
               />
 

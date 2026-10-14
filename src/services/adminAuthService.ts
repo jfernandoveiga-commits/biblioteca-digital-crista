@@ -771,5 +771,40 @@ export const adminAuthService = {
       };
     }
   },
+
+  async updateCredentials(params: {
+    currentPassword: string;
+    newUsername?: string;
+    newPassword?: string;
+    confirmNewPassword?: string;
+  }): Promise<{
+    success: boolean;
+    username?: string;
+    message?: string;
+    error?: string;
+  }> {
+    try {
+      const response = await fetch('/api/admin/update-credentials', {
+        method: 'POST',
+        headers: this.getAuthHeaders(),
+        body: JSON.stringify(params),
+        credentials: 'include',
+      });
+      const data = await response.json();
+      if (!response.ok || !data.success) {
+        return {
+          success: false,
+          error: data.error || 'Falha ao atualizar credenciais do administrador.',
+        };
+      }
+      return data;
+    } catch (err: any) {
+      console.error('[adminAuthService] Erro ao atualizar credenciais do administrador:', err);
+      return {
+        success: false,
+        error: 'Erro de conexão ao atualizar credenciais do administrador.',
+      };
+    }
+  },
 };
 

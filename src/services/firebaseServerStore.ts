@@ -51,6 +51,9 @@ export interface FirestoreSystemConfigDoc {
   features: LibraryFeaturesConfig;
   contentAvailability: ContentAvailabilityConfig;
   updatedAt: string;
+  adminUsername?: string;
+  adminPasswordHash?: string;
+  adminPasswordSalt?: string;
 }
 
 export interface FirestoreStatusInfo {

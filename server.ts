@@ -359,6 +359,13 @@ async function syncWithFirestore(): Promise<void> {
           ...(cloudConfig.features || {}),
           audioReading: false,
         };
+        if (cloudConfig.adminUsername) {
+          securityConfig.adminUsername = cloudConfig.adminUsername;
+        }
+        if (cloudConfig.adminPasswordHash && cloudConfig.adminPasswordSalt) {
+          securityConfig.adminPasswordHash = cloudConfig.adminPasswordHash;
+          securityConfig.adminPasswordSalt = cloudConfig.adminPasswordSalt;
+        }
         await syncSystemConfigToFirestore();
         const rawCloudBooks = cloudConfig.contentAvailability?.books || {};
         const cleanedCloudBooks: Record<string, any> = {};
@@ -419,6 +426,9 @@ async function syncSystemConfigToFirestore(): Promise<void> {
       features: securityConfig.features,
       contentAvailability: securityConfig.contentAvailability,
       updatedAt: new Date().toISOString(),
+      adminUsername: securityConfig.adminUsername,
+      adminPasswordHash: securityConfig.adminPasswordHash,
+      adminPasswordSalt: securityConfig.adminPasswordSalt,
     });
   } catch (err: any) {
     console.warn('[Firebase] Falha ao persistir system_config no Firestore:', err.message || err);
@@ -1326,6 +1336,102 @@ app.post('/api/admin/update-pin', requireAdminAuth, (req, res) => {
     message: 'PIN de acesso dos leitores atualizado com sucesso e salvo com persistência.',
     lastPinChangedAt: securityConfig.lastPinChangedAt,
     sessionsRevoked: Boolean(revokeExistingSessions),
+  });
+});
+
+// 5.1 Alteração do login (usuário) e senha do administrador (requer autenticação)
+app.post('/api/admin/update-credentials', requireAdminAuth, (req, res) => {
+  const { currentPassword, newUsername, newPassword, confirmNewPassword } = req.body || {};
+
+  if (!currentPassword || typeof currentPassword !== 'string') {
+    res.status(400).json({
+      success: false,
+      error: 'Por favor, informe a senha atual do administrador para confirmar a alteração.',
+    });
+    return;
+  }
+
+  // Validação da senha atual
+  const isCurrentValid =
+    verifyAdminPassword(currentPassword, securityConfig.adminPasswordHash, securityConfig.adminPasswordSalt) ||
+    (currentPassword === ENV_ADMIN_PASSWORD && ENV_ADMIN_PASSWORD.length > 0);
+
+  if (!isCurrentValid) {
+    res.status(401).json({
+      success: false,
+      error: 'A senha atual informada está incorreta.',
+    });
+    return;
+  }
+
+  const cleanNewUser = typeof newUsername === 'string' ? newUsername.trim() : '';
+  const cleanNewPass = typeof newPassword === 'string' ? newPassword.trim() : '';
+  const cleanConfirmPass = typeof confirmNewPassword === 'string' ? confirmNewPassword.trim() : '';
+
+  let hasChanges = false;
+
+  // Alteração do nome de usuário / login
+  if (cleanNewUser && cleanNewUser !== securityConfig.adminUsername) {
+    if (cleanNewUser.length < 3) {
+      res.status(400).json({
+        success: false,
+        error: 'O novo nome de usuário deve conter no mínimo 3 caracteres.',
+      });
+      return;
+    }
+    securityConfig.adminUsername = cleanNewUser;
+    hasChanges = true;
+
+    // Atualiza a sessão ativa atual associada ao token
+    const token = extractAdminToken(req);
+    if (token) {
+      const sess = activeAdminSessions.get(token);
+      if (sess) {
+        sess.username = cleanNewUser;
+      }
+    }
+  }
+
+  // Alteração da senha
+  if (cleanNewPass) {
+    if (cleanNewPass.length < 6) {
+      res.status(400).json({
+        success: false,
+        error: 'A nova senha deve conter no mínimo 6 caracteres.',
+      });
+      return;
+    }
+    if (cleanNewPass !== cleanConfirmPass) {
+      res.status(400).json({
+        success: false,
+        error: 'A confirmação da nova senha não confere com a nova senha digitada.',
+      });
+      return;
+    }
+
+    const newSalt = crypto.randomBytes(16).toString('hex');
+    const newHash = hashAdminPassword(cleanNewPass, newSalt);
+
+    securityConfig.adminPasswordHash = newHash;
+    securityConfig.adminPasswordSalt = newSalt;
+    hasChanges = true;
+  }
+
+  if (!hasChanges) {
+    res.status(400).json({
+      success: false,
+      error: 'Nenhuma alteração foi realizada. Informe um novo login ou uma nova senha.',
+    });
+    return;
+  }
+
+  saveSecurityConfig(securityConfig);
+  syncSystemConfigToFirestore();
+
+  res.json({
+    success: true,
+    username: securityConfig.adminUsername,
+    message: 'Credenciais do administrador atualizadas com sucesso e salvas com persistência.',
   });
 });
 

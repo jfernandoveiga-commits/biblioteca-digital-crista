@@ -58,18 +58,12 @@ export const ReaderRegistrationScreen: React.FC<ReaderRegistrationScreenProps> =
   onRegistrationSuccess,
   onLogout,
 }) => {
-  // Campos do formulário
-  const [fullName, setFullName] = useState<string>(() => {
-    // Se o identificador inicial criado pelo admin não for um placeholder padrão, sugere pré-formatado
-    if (initialName && !initialName.toLowerCase().startsWith('acesso') && !initialName.toLowerCase().startsWith('leitor')) {
-      return formatFullName(initialName);
-    }
-    return '';
-  });
+  // Campos do formulário - iniciam totalmente em branco
+  const [fullName, setFullName] = useState<string>('');
   const [phone, setPhone] = useState<string>('');
   const [birthDate, setBirthDate] = useState<string>('');
-  const [gender, setGender] = useState<ReaderGender>('Prefiro não informar');
-  const [maritalStatus, setMaritalStatus] = useState<ReaderMaritalStatus>('Solteiro(a)');
+  const [gender, setGender] = useState<ReaderGender | ''>('');
+  const [maritalStatus, setMaritalStatus] = useState<ReaderMaritalStatus | ''>('');
 
   // Estados de controle e validação
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
@@ -77,11 +71,11 @@ export const ReaderRegistrationScreen: React.FC<ReaderRegistrationScreenProps> =
   const [successCelebration, setSuccessCelebration] = useState<ReaderProfile | null>(null);
   const [touched, setTouched] = useState<Record<string, boolean>>({});
 
-  // Cálculo automático de idade a partir da data de nascimento
+  // Cálculo automático de idade a partir da data de nascimento (campo fica em branco até a data ser preenchida)
   const ageDetail = useMemo(() => {
     if (!birthDate) {
       return {
-        formatted: 'Preencha a data de nascimento',
+        formatted: '',
         isValid: false,
         years: 0,
         months: 0,
@@ -162,7 +156,7 @@ export const ReaderRegistrationScreen: React.FC<ReaderRegistrationScreenProps> =
     if (!phoneValidation.isValid) {
       setErrorMessage(
         phoneValidation.error ||
-          'Por favor, informe um telefone celular brasileiro válido com DDD (ex: (19) 98102-6699).'
+          'Por favor, informe um telefone celular brasileiro válido com DDD.'
       );
       return;
     }
@@ -177,6 +171,16 @@ export const ReaderRegistrationScreen: React.FC<ReaderRegistrationScreenProps> =
       return;
     }
 
+    if (!gender) {
+      setErrorMessage('Por favor, selecione seu sexo.');
+      return;
+    }
+
+    if (!maritalStatus) {
+      setErrorMessage('Por favor, selecione seu estado civil.');
+      return;
+    }
+
     setIsSubmitting(true);
     setErrorMessage(null);
 
@@ -184,8 +188,8 @@ export const ReaderRegistrationScreen: React.FC<ReaderRegistrationScreenProps> =
       fullName: formattedName,
       phone: phoneValidation.normalized,
       birthDate,
-      gender,
-      maritalStatus,
+      gender: gender as ReaderGender,
+      maritalStatus: maritalStatus as ReaderMaritalStatus,
     };
 
     const res = await authService.registerProfile(payload);
@@ -310,9 +314,6 @@ export const ReaderRegistrationScreen: React.FC<ReaderRegistrationScreenProps> =
                 >
                   Nome Completo <span className="text-rose-500">*</span>
                 </label>
-                <span className="text-[11px] text-stone-400 dark:text-zinc-500 italic">
-                  Formatação automática de maiúsculas e partículas
-                </span>
               </div>
 
               <div className="relative">
@@ -328,15 +329,14 @@ export const ReaderRegistrationScreen: React.FC<ReaderRegistrationScreenProps> =
                   type="text"
                   autoComplete="name"
                   required
-                  placeholder="Ex: José Fernando da Silva"
                   value={fullName}
                   onChange={handleNameChange}
                   onBlur={handleNameBlur}
                   disabled={isSubmitting || Boolean(successCelebration)}
                   className={`w-full pl-10 pr-4 py-2.5 rounded-xl border text-sm transition-all focus:outline-hidden ${
                     isDark
-                      ? 'bg-zinc-800/70 border-zinc-700 text-zinc-100 placeholder-zinc-500 focus:border-amber-400 focus:ring-2 focus:ring-amber-400/20'
-                      : 'bg-white border-stone-300 text-stone-900 placeholder-stone-400 focus:border-amber-600 focus:ring-2 focus:ring-amber-500/20'
+                      ? 'bg-zinc-800/70 border-zinc-700 text-zinc-100 focus:border-amber-400 focus:ring-2 focus:ring-amber-400/20'
+                      : 'bg-white border-stone-300 text-stone-900 focus:border-amber-600 focus:ring-2 focus:ring-amber-500/20'
                   } ${
                     touched.fullName && !nameValidation.isValid
                       ? 'border-rose-400 dark:border-rose-500'
@@ -363,9 +363,6 @@ export const ReaderRegistrationScreen: React.FC<ReaderRegistrationScreenProps> =
                 >
                   Telefone Celular / WhatsApp <span className="text-rose-500">*</span>
                 </label>
-                <span className="text-[11px] text-stone-400 dark:text-zinc-500 font-mono">
-                  (DD) 9XXXX-XXXX
-                </span>
               </div>
 
               <div className="relative">
@@ -382,7 +379,6 @@ export const ReaderRegistrationScreen: React.FC<ReaderRegistrationScreenProps> =
                   inputMode="tel"
                   autoComplete="tel"
                   required
-                  placeholder="(19) 98102-6699"
                   value={phone}
                   onChange={handlePhoneChange}
                   onBlur={() => setTouched((prev) => ({ ...prev, phone: true }))}
@@ -390,8 +386,8 @@ export const ReaderRegistrationScreen: React.FC<ReaderRegistrationScreenProps> =
                   maxLength={15}
                   className={`w-full pl-10 pr-4 py-2.5 rounded-xl border text-sm font-mono transition-all focus:outline-hidden ${
                     isDark
-                      ? 'bg-zinc-800/70 border-zinc-700 text-zinc-100 placeholder-zinc-500 focus:border-amber-400 focus:ring-2 focus:ring-amber-400/20'
-                      : 'bg-white border-stone-300 text-stone-900 placeholder-stone-400 focus:border-amber-600 focus:ring-2 focus:ring-amber-500/20'
+                      ? 'bg-zinc-800/70 border-zinc-700 text-zinc-100 focus:border-amber-400 focus:ring-2 focus:ring-amber-400/20'
+                      : 'bg-white border-stone-300 text-stone-900 focus:border-amber-600 focus:ring-2 focus:ring-amber-500/20'
                   } ${
                     touched.phone && !phoneValidation.isValid
                       ? 'border-rose-400 dark:border-rose-500'
@@ -468,9 +464,6 @@ export const ReaderRegistrationScreen: React.FC<ReaderRegistrationScreenProps> =
                   >
                     Idade Calculada
                   </label>
-                  <span className="text-[10px] text-stone-400 dark:text-zinc-500 italic">
-                    Automática
-                  </span>
                 </div>
                 <div className="relative">
                   <div
@@ -529,6 +522,9 @@ export const ReaderRegistrationScreen: React.FC<ReaderRegistrationScreenProps> =
                         : 'bg-white border-stone-300 text-stone-900 focus:border-amber-600 focus:ring-2 focus:ring-amber-500/20'
                     }`}
                   >
+                    <option value="" disabled className={isDark ? 'bg-zinc-800 text-zinc-400' : 'bg-white text-stone-400'}>
+                      Selecione...
+                    </option>
                     {GENDER_OPTIONS.map((opt) => (
                       <option key={opt} value={opt} className={isDark ? 'bg-zinc-800 text-zinc-100' : 'bg-white text-stone-900'}>
                         {opt}
@@ -567,6 +563,9 @@ export const ReaderRegistrationScreen: React.FC<ReaderRegistrationScreenProps> =
                         : 'bg-white border-stone-300 text-stone-900 focus:border-amber-600 focus:ring-2 focus:ring-amber-500/20'
                     }`}
                   >
+                    <option value="" disabled className={isDark ? 'bg-zinc-800 text-zinc-400' : 'bg-white text-stone-400'}>
+                      Selecione...
+                    </option>
                     {MARITAL_STATUS_OPTIONS.map((opt) => (
                       <option key={opt} value={opt} className={isDark ? 'bg-zinc-800 text-zinc-100' : 'bg-white text-stone-900'}>
                         {opt}
