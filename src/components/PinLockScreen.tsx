@@ -1,7 +1,23 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Lock, Eye, EyeOff, BookOpen, Loader2, ShieldCheck, AlertCircle, Clock, Shield } from 'lucide-react';
+import {
+  Lock,
+  Eye,
+  EyeOff,
+  BookOpen,
+  Loader2,
+  ShieldCheck,
+  AlertCircle,
+  Clock,
+  Shield,
+  HelpCircle,
+  ChevronDown,
+  ChevronUp,
+  RefreshCw,
+  Info,
+} from 'lucide-react';
 import { authService, VerifyPinResult } from '../services/authService';
 import { ReadingTheme } from '../types/book';
+import { standardizePin } from '../utils/textFormatters';
 import { PWAInstallButton } from './PWAInstallButton';
 
 interface PinLockScreenProps {
@@ -19,8 +35,11 @@ export const PinLockScreen: React.FC<PinLockScreenProps> = ({
   const [showPin, setShowPin] = useState<boolean>(false);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [errorCode, setErrorCode] = useState<string | null>(null);
+  const [diagnosticInfo, setDiagnosticInfo] = useState<string | null>(null);
   const [attemptsLeft, setAttemptsLeft] = useState<number | null>(null);
   const [lockoutSeconds, setLockoutSeconds] = useState<number>(0);
+  const [showHelp, setShowHelp] = useState<boolean>(false);
 
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -37,6 +56,8 @@ export const PinLockScreen: React.FC<PinLockScreenProps> = ({
       setLockoutSeconds((prev) => {
         if (prev <= 1) {
           setErrorMessage(null);
+          setErrorCode(null);
+          setDiagnosticInfo(null);
           return 0;
         }
         return prev - 1;
@@ -50,15 +71,20 @@ export const PinLockScreen: React.FC<PinLockScreenProps> = ({
     if (e) e.preventDefault();
     if (isLoading || lockoutSeconds > 0) return;
 
-    const cleanPin = pin.trim();
+    // Padroniza estritamente o PIN: converte para string, remove espaços e caracteres invisíveis
+    const cleanPin = standardizePin(pin);
     if (!cleanPin) {
       setErrorMessage('Por favor, digite o PIN para entrar.');
+      setErrorCode('empty_pin');
+      setDiagnosticInfo('Nenhum dígito válido detectado no campo.');
       inputRef.current?.focus();
       return;
     }
 
     setIsLoading(true);
     setErrorMessage(null);
+    setErrorCode(null);
+    setDiagnosticInfo(null);
 
     const result: VerifyPinResult = await authService.verifyPin(cleanPin);
 
@@ -66,9 +92,14 @@ export const PinLockScreen: React.FC<PinLockScreenProps> = ({
 
     if (result.success) {
       setErrorMessage(null);
+      setErrorCode(null);
+      setDiagnosticInfo(null);
       onAuthenticated(result);
     } else {
       setErrorMessage(result.error || 'PIN incorreto. Tente novamente.');
+      setErrorCode(result.code || 'invalid_pin');
+      setDiagnosticInfo(result.diagnostic || null);
+
       if (typeof result.remainingAttempts === 'number') {
         setAttemptsLeft(result.remainingAttempts);
       }
@@ -155,9 +186,13 @@ export const PinLockScreen: React.FC<PinLockScreenProps> = ({
                   autoComplete="current-password"
                   value={pin}
                   onChange={(e) => {
-                    setPin(e.target.value);
+                    // Padroniza e higieniza em tempo real contra espaços acidentais ou quebras de linha
+                    const sanitized = standardizePin(e.target.value);
+                    setPin(sanitized);
                     if (errorMessage && lockoutSeconds === 0) {
                       setErrorMessage(null);
+                      setErrorCode(null);
+                      setDiagnosticInfo(null);
                     }
                   }}
                   disabled={isLoading || lockoutSeconds > 0}
@@ -168,6 +203,8 @@ export const PinLockScreen: React.FC<PinLockScreenProps> = ({
                   } ${
                     lockoutSeconds > 0
                       ? 'opacity-60 cursor-not-allowed border-rose-300 dark:border-rose-800'
+                      : errorMessage
+                      ? 'border-rose-400 dark:border-rose-700 ring-1 ring-rose-400/20'
                       : ''
                   }`}
                 />
@@ -189,20 +226,20 @@ export const PinLockScreen: React.FC<PinLockScreenProps> = ({
               </div>
             </div>
 
-            {/* Alerta de erro ou bloqueio por taxa de tentativas */}
+            {/* Alerta de erro com diagnóstico claro e robusto */}
             {lockoutSeconds > 0 ? (
               <div
-                className={`p-3 rounded-xl border flex items-start gap-2.5 text-xs animate-in fade-in duration-200 ${
+                className={`p-3.5 rounded-xl border flex items-start gap-2.5 text-xs animate-in fade-in duration-200 ${
                   isDark
                     ? 'bg-rose-950/40 border-rose-800/60 text-rose-300'
                     : 'bg-rose-50 border-rose-200 text-rose-800'
                 }`}
                 role="alert"
               >
-                <Clock className="w-4 h-4 shrink-0 mt-0.5" />
-                <div className="flex-1">
+                <Clock className="w-4 h-4 shrink-0 mt-0.5 text-rose-500" />
+                <div className="flex-1 space-y-1">
                   <p className="font-semibold">Bloqueio temporário de segurança</p>
-                  <p className="mt-0.5">
+                  <p className="text-[11px] leading-relaxed">
                     Muitas tentativas consecutivas incorretas. Aguarde{' '}
                     <span className="font-bold font-mono">{lockoutSeconds}s</span> antes de tentar
                     novamente.
@@ -212,30 +249,92 @@ export const PinLockScreen: React.FC<PinLockScreenProps> = ({
             ) : (
               errorMessage && (
                 <div
-                  className={`p-3 rounded-xl border flex items-start gap-2.5 text-xs animate-in fade-in duration-200 ${
+                  className={`p-3.5 rounded-xl border space-y-2 text-xs animate-in fade-in duration-200 ${
                     isDark
                       ? 'bg-rose-950/40 border-rose-800/60 text-rose-300'
                       : 'bg-rose-50 border-rose-200 text-rose-800'
                   }`}
                   role="alert"
                 >
-                  <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-                  <div className="flex-1">
-                    <p>{errorMessage}</p>
-                    {attemptsLeft !== null && attemptsLeft > 0 && attemptsLeft < 5 && (
-                      <p className="mt-1 opacity-90">
-                        Tentativas restantes: <strong>{attemptsLeft}</strong>
-                      </p>
-                    )}
+                  <div className="flex items-start gap-2.5">
+                    <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-rose-500" />
+                    <div className="flex-1">
+                      <p className="font-medium leading-relaxed">{errorMessage}</p>
+                      {attemptsLeft !== null && attemptsLeft > 0 && attemptsLeft < 5 && (
+                        <p className="mt-1 text-[11px] opacity-90">
+                          Tentativas restantes antes do bloqueio: <strong>{attemptsLeft}</strong>
+                        </p>
+                      )}
+                    </div>
                   </div>
+
+                  {/* Informação diagnóstica detalhada */}
+                  {diagnosticInfo && (
+                    <div
+                      className={`text-[11px] px-2.5 py-1.5 rounded-lg flex items-center gap-1.5 ${
+                        isDark ? 'bg-rose-900/40 text-rose-200' : 'bg-rose-100/70 text-rose-900'
+                      }`}
+                    >
+                      <Info className="w-3.5 h-3.5 shrink-0 opacity-70" />
+                      <span>{diagnosticInfo}</span>
+                    </div>
+                  )}
                 </div>
               )
             )}
 
+            {/* Ajuda e Orientações para Diagnóstico do PIN do Leitor */}
+            <div className="pt-1">
+              <button
+                type="button"
+                onClick={() => setShowHelp(!showHelp)}
+                className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-[11px] font-medium transition-colors cursor-pointer ${
+                  isDark
+                    ? 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/60'
+                    : 'text-stone-600 hover:text-stone-900 hover:bg-stone-100'
+                }`}
+              >
+                <span className="flex items-center gap-1.5">
+                  <HelpCircle className="w-3.5 h-3.5 text-amber-500" />
+                  <span>Dúvidas ou problemas com o PIN de leitor?</span>
+                </span>
+                {showHelp ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+              </button>
+
+              {showHelp && (
+                <div
+                  className={`mt-2 p-3.5 rounded-xl border text-[11px] space-y-2 leading-relaxed animate-in fade-in duration-200 ${
+                    isDark
+                      ? 'bg-zinc-800/60 border-zinc-700/60 text-zinc-300'
+                      : 'bg-stone-50 border-stone-200 text-stone-700'
+                  }`}
+                >
+                  <div className="flex items-start gap-2">
+                    <span className="font-semibold text-amber-600 dark:text-amber-400">•</span>
+                    <p>
+                      <strong>PINs Individuais:</strong> Leitores registrados pelo sistema (como Fernando Veiga e Ana Crachano) possuem códigos de acesso gerados pela administração.
+                    </p>
+                  </div>
+                  <div className="flex items-start gap-2">
+                    <span className="font-semibold text-amber-600 dark:text-amber-400">•</span>
+                    <p>
+                      <strong>Formato dos Dígitos:</strong> O aplicativo higieniza automaticamente espaços acidentais e pontuações ao digitar ou colar.
+                    </p>
+                  </div>
+                  <div className="flex items-start gap-2">
+                    <span className="font-semibold text-amber-600 dark:text-amber-400">•</span>
+                    <p>
+                      <strong>Redefinição Rápida:</strong> Caso haja divergência no código entregue ao leitor, o administrador pode gerar um novo PIN a qualquer momento no Painel Administrativo.
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
+
             {/* Botão de envio */}
             <button
               type="submit"
-              disabled={isLoading || lockoutSeconds > 0 || !pin.trim()}
+              disabled={isLoading || lockoutSeconds > 0 || !standardizePin(pin)}
               className={`w-full py-3 px-4 rounded-xl text-sm font-semibold tracking-wide transition-all duration-200 flex items-center justify-center gap-2 cursor-pointer ${
                 isDark
                   ? 'bg-amber-400 hover:bg-amber-300 active:bg-amber-500 text-zinc-950 shadow-md shadow-amber-400/10'

@@ -17,7 +17,6 @@ export const chapter2: Chapter = {
   number: 2,
   romanNumber: 'Capítulo 2',
   title: 'O Namoro dos Desiguais',
-  subtitle: 'A integridade da fé diante das escolhas afetivas e dos fundamentos para o futuro',
   estimatedReadingTimeMinutes: 12,
   status: 'published',
   editorialNote: 'Texto autoral original fornecido integralmente pelo autor Pr. Fernando Veiga.',

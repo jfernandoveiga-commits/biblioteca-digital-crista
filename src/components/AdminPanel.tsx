@@ -66,7 +66,7 @@ import {
 } from '../types/book';
 import { libraryBooks } from '../data/booksCatalog';
 import { PWAInstallButton } from './PWAInstallButton';
-import { calculateDetailedAge } from '../utils/textFormatters';
+import { calculateDetailedAge, standardizePin } from '../utils/textFormatters';
 
 interface AdminPanelProps {
   theme?: ReadingTheme;
@@ -343,9 +343,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     }
 
     if (pinMode === 'manual') {
-      const pin = customPinInput.trim();
+      const pin = standardizePin(customPinInput);
       if (pin.length < 4 || pin.length > 12) {
-        setActionErrorMessage('O PIN manual deve conter entre 4 e 12 dígitos.');
+        setActionErrorMessage('O PIN manual deve conter entre 4 e 12 dígitos ou caracteres (sem espaços).');
         return;
       }
     }
@@ -370,7 +370,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       const res = await adminAuthService.createReaderAccess({
         name: newReaderName.trim(),
         pinMode,
-        customPin: pinMode === 'manual' ? customPinInput.trim() : undefined,
+        customPin: pinMode === 'manual' ? standardizePin(customPinInput) : undefined,
         expiresAt: calculatedExpiresAt,
         notes: readerNotes.trim() || undefined,
         contentPermissions: newReaderPermissions || undefined,
@@ -637,11 +637,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     if (!resetPinModal.reader) return;
 
     if (resetPinModal.pinMode === 'manual') {
-      const pin = resetPinModal.customPin.trim();
+      const pin = standardizePin(resetPinModal.customPin);
       if (pin.length < 4 || pin.length > 12) {
         setResetPinModal((prev) => ({
           ...prev,
-          error: 'O PIN manual deve conter entre 4 e 12 dígitos ou caracteres.',
+          error: 'O PIN manual deve conter entre 4 e 12 dígitos ou caracteres (sem espaços).',
         }));
         return;
       }
@@ -652,7 +652,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     try {
       const res = await adminAuthService.resetReaderPin(resetPinModal.reader.id, {
         pinMode: resetPinModal.pinMode,
-        customPin: resetPinModal.pinMode === 'manual' ? resetPinModal.customPin.trim() : undefined,
+        customPin: resetPinModal.pinMode === 'manual' ? standardizePin(resetPinModal.customPin) : undefined,
       });
 
       if (res.success && res.result) {
@@ -811,6 +811,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         }
       },
     });
+  };
+
   // Alteração de Login e Senha do Administrador
   const handleUpdateAdminCredentials = async (e: React.FormEvent) => {
     e.preventDefault();

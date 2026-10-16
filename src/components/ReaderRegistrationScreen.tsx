@@ -26,6 +26,7 @@ import {
   formatPhoneNumber,
   validateBrazilianMobilePhone,
   calculateDetailedAge,
+  standardizePin,
 } from '../utils/textFormatters';
 import { authService } from '../services/authService';
 

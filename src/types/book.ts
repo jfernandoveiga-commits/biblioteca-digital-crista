@@ -142,6 +142,7 @@ export interface ReaderAccessRecord {
   hasProfile?: boolean; // Indica se o leitor já concluiu o cadastro pessoal
   profile?: ReaderProfile | null; // Dados cadastrais vinculados
   contentPermissions?: ReaderContentPermissions | null; // Gestão individual de Liberado/Bloqueado de livros e capítulos
+  updatedAt?: string;
 }
 
 export interface ReaderProfileUpdateInput {

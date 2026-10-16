@@ -12,17 +12,23 @@ import {
   ReaderProfile,
   ReaderProfileUpdateInput,
 } from '../types/book';
+import { standardizePin } from '../utils/textFormatters';
 
 const SESSION_TOKEN_KEY = 'bib_session_token';
 
 export interface VerifyPinResult {
   success: boolean;
   error?: string;
+  code?: string;
+  diagnostic?: string;
   remainingAttempts?: number;
   retryAfter?: number;
   token?: string;
   expiresAt?: number;
   isLocked?: boolean;
+  isAccessBlocked?: boolean;
+  isAccessRevoked?: boolean;
+  isAccessExpired?: boolean;
   accessId?: string;
   readerName?: string;
   hasProfile?: boolean;
@@ -112,15 +118,27 @@ export const authService = {
 
   /**
    * Envia o PIN ao servidor para validação segura
+   * Trata o PIN de forma padronizada (converte para string e remove espaços acidentais)
    */
-  async verifyPin(pin: string): Promise<VerifyPinResult> {
+  async verifyPin(pin: unknown): Promise<VerifyPinResult> {
     try {
+      const sanitizedPin = standardizePin(pin);
+
+      if (!sanitizedPin) {
+        return {
+          success: false,
+          code: 'empty_pin',
+          error: 'Por favor, digite o PIN para entrar.',
+          diagnostic: 'Nenhum caractere válido foi informado no campo de PIN.',
+        };
+      }
+
       const response = await fetch('/api/auth/verify-pin', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ pin }),
+        body: JSON.stringify({ pin: sanitizedPin }),
         credentials: 'include',
       });
 
@@ -142,15 +160,22 @@ export const authService = {
       return {
         success: false,
         error: data.error || 'PIN incorreto. Tente novamente.',
+        code: data.code,
+        diagnostic: data.diagnostic,
         remainingAttempts: data.remainingAttempts,
         retryAfter: data.retryAfter,
         isLocked: data.isLocked,
+        isAccessBlocked: data.isAccessBlocked,
+        isAccessRevoked: data.isAccessRevoked,
+        isAccessExpired: data.isAccessExpired,
       };
     } catch (err) {
       console.error('[authService] Erro de rede ao validar PIN:', err);
       return {
         success: false,
+        code: 'network_error',
         error: 'Erro de conexão com o servidor. Verifique sua rede e tente novamente.',
+        diagnostic: 'Não foi possível estabelecer contato com a API de autenticação.',
       };
     }
   },

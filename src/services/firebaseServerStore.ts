@@ -229,6 +229,27 @@ class FirebaseServerStore {
   }
 
   /**
+   * Converte documento do Firestore para ReaderAccessRecord garantindo tipos estritos
+   */
+  private parseReaderDoc(id: string, data: any): ReaderAccessRecord {
+    return {
+      id: String(id || data.id),
+      name: String(data.name || '').trim(),
+      pinHash: String(data.pinHash || ''),
+      pinSalt: String(data.pinSalt || ''),
+      status: (data.status as any) || 'active',
+      createdAt: data.createdAt || new Date().toISOString(),
+      expiresAt: data.expiresAt || null,
+      lastUsedAt: data.lastUsedAt || null,
+      notes: typeof data.notes === 'string' ? data.notes : '',
+      hasProfile: Boolean(data.hasProfile),
+      profile: data.profile ? JSON.parse(JSON.stringify(data.profile)) : null,
+      contentPermissions: data.contentPermissions ? JSON.parse(JSON.stringify(data.contentPermissions)) : undefined,
+      updatedAt: data.updatedAt || undefined,
+    };
+  }
+
+  /**
    * Carrega todos os acessos dos leitores do Firestore
    */
   public async loadAllReaderAccesses(): Promise<ReaderAccessRecord[]> {
@@ -241,14 +262,12 @@ class FirebaseServerStore {
     if (this.clientDb) {
       const snap = await getDocs(collection(this.clientDb, 'reader_accesses'));
       snap.forEach((d) => {
-        const data = d.data() as ReaderAccessRecord;
-        readers.push({ ...data, id: d.id });
+        readers.push(this.parseReaderDoc(d.id, d.data()));
       });
     } else if (this.adminDb) {
       const snap = await this.adminDb.collection('reader_accesses').get();
       snap.forEach((d) => {
-        const data = d.data() as ReaderAccessRecord;
-        readers.push({ ...data, id: d.id });
+        readers.push(this.parseReaderDoc(d.id, d.data()));
       });
     }
 
@@ -257,26 +276,54 @@ class FirebaseServerStore {
   }
 
   /**
-   * Salva ou atualiza um acesso de leitor no Firestore
+   * Consulta um leitor específico diretamente pelo ID no Firestore
+   */
+  public async getReaderAccessById(readerId: string): Promise<ReaderAccessRecord | null> {
+    if (!this.isReady() || !readerId) return null;
+
+    try {
+      if (this.clientDb) {
+        const snap = await getDoc(doc(this.clientDb, 'reader_accesses', readerId));
+        if (snap.exists()) {
+          return this.parseReaderDoc(snap.id, snap.data());
+        }
+      } else if (this.adminDb) {
+        const snap = await this.adminDb.collection('reader_accesses').doc(readerId).get();
+        if (snap.exists) {
+          return this.parseReaderDoc(snap.id, snap.data());
+        }
+      }
+    } catch (err: any) {
+      console.warn(`[Firebase] Erro ao consultar leitor ${readerId}:`, err?.message || err);
+    }
+    return null;
+  }
+
+  /**
+   * Salva ou atualiza um acesso de leitor no Firestore de forma segura e resiliente
    */
   public async saveReaderAccess(reader: ReaderAccessRecord): Promise<void> {
     if (!this.isReady()) return;
 
-    const payload = {
-      id: reader.id,
-      name: reader.name,
-      pinHash: reader.pinHash || '',
-      pinSalt: reader.pinSalt || '',
-      status: reader.status,
-      createdAt: reader.createdAt,
+    // Higienização profunda para evitar qualquer valor `undefined` que quebre o Firestore SDK
+    const payload: Record<string, any> = {
+      id: String(reader.id),
+      name: String(reader.name || '').trim(),
+      pinHash: String(reader.pinHash || ''),
+      pinSalt: String(reader.pinSalt || ''),
+      status: reader.status || 'active',
+      createdAt: reader.createdAt || new Date().toISOString(),
       expiresAt: reader.expiresAt || null,
       lastUsedAt: reader.lastUsedAt || null,
-      notes: reader.notes || '',
+      notes: typeof reader.notes === 'string' ? reader.notes.trim() : '',
       hasProfile: Boolean(reader.hasProfile),
-      profile: reader.profile || null,
-      contentPermissions: reader.contentPermissions || null,
+      profile: reader.profile ? JSON.parse(JSON.stringify(reader.profile)) : null,
       updatedAt: new Date().toISOString(),
     };
+
+    if (reader.contentPermissions) {
+      payload.contentPermissions = JSON.parse(JSON.stringify(reader.contentPermissions));
+    }
 
     if (this.clientDb) {
       await setDoc(doc(this.clientDb, 'reader_accesses', reader.id), payload, { merge: true });

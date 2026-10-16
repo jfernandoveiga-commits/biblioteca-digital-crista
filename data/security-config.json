@@ -38,58 +38,75 @@
   },
   "readerAccesses": [
     {
+      "id": "reader-1791893732551-e38689bb",
+      "name": "Ana Clara Carchano Garcia",
+      "pinHash": "44046704b6ef60587bbe0e3eca6263604acfd784c11e1fe6e37a0e0d2a8c70df",
+      "pinSalt": "23a0a007341f6d5af0a938cfc87a69f7",
+      "status": "active",
       "createdAt": "2026-10-13T12:15:32.551Z",
+      "expiresAt": null,
+      "lastUsedAt": "2026-10-13T12:29:28.634Z",
+      "notes": "Leitora teste",
+      "hasProfile": false,
+      "profile": null,
       "contentPermissions": {
         "books": {
+          "entre-a-cruz-e-o-mundo": {
+            "chapters": {
+              "capitulo-2": false,
+              "capitulo-1": true
+            },
+            "enabled": true
+          },
           "e-ai-crente": {
             "chapters": {
               "capitulo-1": false
             },
             "enabled": true
+          }
+        }
+      },
+      "updatedAt": "2026-10-15T10:53:36.558Z"
+    },
+    {
+      "id": "access-initial-default",
+      "name": "Fernando Veiga",
+      "pinHash": "8d47ad79e83b8acbe2341029ea6533a3c27b010f097d576f9cbb06c87d8557bf",
+      "pinSalt": "f8db303270be7ee281c2c7d036109faf",
+      "status": "active",
+      "createdAt": "2026-10-10T16:41:50.949Z",
+      "expiresAt": null,
+      "lastUsedAt": "2026-10-15T18:22:16.416Z",
+      "notes": "Acesso inicial configurado pelo sistema",
+      "hasProfile": true,
+      "profile": {
+        "fullName": "Fernando Veiga",
+        "phone": "19981026699",
+        "maritalStatus": "Casado(a)",
+        "updatedAt": "2026-10-13T12:12:21.075Z",
+        "registeredAt": "2026-10-13T12:12:21.075Z",
+        "phoneFormatted": "(19) 98102-6699",
+        "gender": "Masculino",
+        "birthDate": "1967-04-02"
+      },
+      "contentPermissions": {
+        "books": {
+          "e-ai-crente": {
+            "chapters": {
+              "capitulo-1": true
+            },
+            "enabled": true
           },
           "entre-a-cruz-e-o-mundo": {
             "chapters": {
-              "capitulo-1": true,
-              "capitulo-2": false
+              "capitulo-2": true,
+              "capitulo-1": true
             },
             "enabled": true
           }
         }
       },
-      "lastUsedAt": "2026-10-14T10:18:38.374Z",
-      "name": "Ana Clara Carchano Garcia",
-      "updatedAt": "2026-10-13T12:32:48.325Z",
-      "profile": null,
-      "expiresAt": null,
-      "id": "reader-1791893732551-e38689bb",
-      "status": "active",
-      "pinHash": "f898196e489d7eae3019037515ba4b65196e2e10a018404075855a03feda512c",
-      "notes": "Leitora teste",
-      "pinSalt": "e09943d4275488b53ba38c73744803f9",
-      "hasProfile": false
-    },
-    {
-      "pinHash": "19d7779c0ba000659d7dc1316edcc846bd0731e52911ac724e48fc198899916b",
-      "notes": "Acesso inicial configurado pelo sistema",
-      "lastUsedAt": "2026-10-14T10:18:51.027Z",
-      "createdAt": "2026-10-10T16:41:50.949Z",
-      "name": "Fernando Veiga",
-      "expiresAt": null,
-      "updatedAt": "2026-10-13T12:12:21.076Z",
-      "hasProfile": true,
-      "profile": {
-        "birthDate": "1967-04-02",
-        "updatedAt": "2026-10-13T12:12:21.075Z",
-        "registeredAt": "2026-10-13T12:12:21.075Z",
-        "phone": "19981026699",
-        "maritalStatus": "Casado(a)",
-        "gender": "Masculino",
-        "fullName": "Fernando Veiga",
-        "phoneFormatted": "(19) 98102-6699"
-      },
-      "status": "active",
-      "id": "access-initial-default",
-      "pinSalt": "dc41e63cfc00c20311f1edd28cff99c3"
+      "updatedAt": "2026-10-15T18:22:16.416Z"
     }
   ]
 }

@@ -86,55 +86,28 @@ import {
   formatPhoneNumber,
   validateBrazilianMobilePhone,
   calculateDetailedAge,
+  standardizePin,
 } from './src/utils/textFormatters';
 
-export type ReaderGender = 'Feminino' | 'Masculino' | 'Prefiro não informar';
+import {
+  ReaderGender,
+  ReaderMaritalStatus,
+  ReaderProfile,
+  ReaderAccessStatus,
+  ReaderBookPermission,
+  ReaderContentPermissions,
+  ReaderAccessRecord,
+} from './src/types/book';
 
-export type ReaderMaritalStatus =
-  | 'Solteiro(a)'
-  | 'Casado(a)'
-  | 'União estável'
-  | 'Separado(a)'
-  | 'Divorciado(a)'
-  | 'Viúvo(a)'
-  | 'Prefiro não informar';
-
-export interface ReaderProfile {
-  fullName: string;
-  phone: string;
-  phoneFormatted: string;
-  birthDate: string; // YYYY-MM-DD
-  gender: ReaderGender;
-  maritalStatus: ReaderMaritalStatus;
-  registeredAt: string;
-  updatedAt: string;
-}
-
-export type ReaderAccessStatus = 'active' | 'blocked' | 'revoked';
-
-export interface ReaderBookPermission {
-  enabled: boolean;
-  chapters: Record<string, boolean>;
-}
-
-export interface ReaderContentPermissions {
-  books: Record<string, ReaderBookPermission>;
-}
-
-export interface ReaderAccessRecord {
-  id: string;
-  name: string;
-  pinHash: string;
-  pinSalt: string;
-  status: ReaderAccessStatus;
-  createdAt: string;
-  expiresAt: string | null;
-  lastUsedAt: string | null;
-  notes?: string;
-  hasProfile?: boolean;
-  profile?: ReaderProfile | null;
-  contentPermissions?: ReaderContentPermissions | null;
-}
+export type {
+  ReaderGender,
+  ReaderMaritalStatus,
+  ReaderProfile,
+  ReaderAccessStatus,
+  ReaderBookPermission,
+  ReaderContentPermissions,
+  ReaderAccessRecord,
+};
 
 interface SecurityConfig {
   pinHash: string;
@@ -152,18 +125,36 @@ interface SecurityConfig {
   readerAccesses: ReaderAccessRecord[];
 }
 
-// Funções criptográficas de tempo constante (PBKDF2)
-function hashPin(pin: string, salt: string): string {
-  return crypto.pbkdf2Sync(pin.trim(), salt, 10000, 32, 'sha256').toString('hex');
+// Funções criptográficas de tempo constante (PBKDF2) com higienização estrita de PIN
+function hashPin(pin: unknown, salt: string): string {
+  const clean = standardizePin(pin);
+  return crypto.pbkdf2Sync(clean, salt, 10000, 32, 'sha256').toString('hex');
 }
 
-function verifyPinHash(candidatePin: string, storedHash: string, salt: string): boolean {
+function verifyPinHash(candidatePin: unknown, storedHash: string, salt: string): boolean {
+  if (!candidatePin || !storedHash || !salt) return false;
   try {
-    const candidateHash = hashPin(candidatePin, salt);
+    const cleanCandidate = standardizePin(candidatePin);
+    if (!cleanCandidate) return false;
+
+    const candidateHash = hashPin(cleanCandidate, salt);
     const bufCandidate = Buffer.from(candidateHash, 'hex');
     const bufStored = Buffer.from(storedHash, 'hex');
-    if (bufCandidate.length !== bufStored.length) return false;
-    return crypto.timingSafeEqual(bufCandidate, bufStored);
+    if (bufCandidate.length === bufStored.length && crypto.timingSafeEqual(bufCandidate, bufStored)) {
+      return true;
+    }
+
+    // Fallback de retrocompatibilidade para hashes legados criados com espaços ou pontuações
+    const rawCandidate = String(candidatePin).trim();
+    if (rawCandidate && rawCandidate !== cleanCandidate) {
+      const rawHash = crypto.pbkdf2Sync(rawCandidate, salt, 10000, 32, 'sha256').toString('hex');
+      const bufRaw = Buffer.from(rawHash, 'hex');
+      if (bufRaw.length === bufStored.length && crypto.timingSafeEqual(bufRaw, bufStored)) {
+        return true;
+      }
+    }
+
+    return false;
   } catch {
     return false;
   }
@@ -805,14 +796,16 @@ app.get('/api/library/check-access/:bookId/:chapterId', (req, res) => {
 });
 
 
-// Validação do PIN do leitor
-app.post('/api/auth/verify-pin', (req, res) => {
+// Validação robusta e padronizada do PIN do leitor com sincronização Firestore
+app.post('/api/auth/verify-pin', async (req, res) => {
   // Se a biblioteca estiver bloqueada pelo painel administrativo
   if (securityConfig.isLibraryLocked) {
     res.status(403).json({
       success: false,
       isLocked: true,
+      code: 'library_locked',
       error: securityConfig.lockReason || 'O acesso à biblioteca está temporariamente bloqueado pela administração.',
+      diagnostic: 'A administração ativou o bloqueio geral da biblioteca.',
     });
     return;
   }
@@ -825,37 +818,88 @@ app.post('/api/auth/verify-pin', (req, res) => {
     const remainingSeconds = Math.ceil((entry.lockedUntil - now) / 1000);
     res.status(429).json({
       success: false,
+      code: 'rate_limited',
       error: `Muitas tentativas incorretas. Aguarde ${remainingSeconds} segundo${
         remainingSeconds > 1 ? 's' : ''
       } para tentar novamente.`,
       retryAfter: remainingSeconds,
+      diagnostic: 'Bloqueio temporário de segurança ativo contra tentativas repetidas.',
     });
     return;
   }
 
   const { pin } = req.body || {};
+  const cleanPin = standardizePin(pin);
 
-  if (!pin || typeof pin !== 'string') {
+  if (!cleanPin) {
     res.status(400).json({
       success: false,
-      error: 'Por favor, informe o PIN de acesso.',
+      code: 'empty_pin',
+      error: 'Por favor, informe o PIN de acesso (apenas os dígitos ou caracteres fornecidos).',
+      diagnostic: 'Nenhum caractere válido recebido após higienização e remoção de espaços.',
     });
     return;
   }
 
-  const cleanPin = pin.trim();
-
-  // 1. Procura nas credenciais dos acessos cadastrados (acessos individuais)
+  // 1. Procura nas credenciais em cache local na memória
   let matchedAccess: ReaderAccessRecord | null = null;
   const accesses = securityConfig.readerAccesses || [];
 
   for (const acc of accesses) {
-    if (verifyPinHash(cleanPin, acc.pinHash, acc.pinSalt)) {
+    if (acc.pinHash && acc.pinSalt && verifyPinHash(cleanPin, acc.pinHash, acc.pinSalt)) {
       matchedAccess = acc;
       break;
     }
   }
 
+  // 2. Se não conferiu com a memória e o Firestore estiver conectado, busca registros atualizados em tempo real no Firestore
+  if (!matchedAccess && firebaseServerStore.isReady()) {
+    try {
+      const cloudReaders = await firebaseServerStore.loadAllReaderAccesses();
+      if (cloudReaders.length > 0) {
+        const map = new Map<string, ReaderAccessRecord>();
+        for (const r of cloudReaders) {
+          if (r.pinHash && r.pinSalt) {
+            map.set(r.id, r);
+          }
+        }
+        for (const local of securityConfig.readerAccesses || []) {
+          if (!map.has(local.id)) {
+            map.set(local.id, local);
+          }
+        }
+        securityConfig.readerAccesses = Array.from(map.values());
+        saveSecurityConfig(securityConfig);
+
+        // Reavalia com os registros atualizados do Firestore
+        for (const acc of securityConfig.readerAccesses) {
+          if (acc.pinHash && acc.pinSalt && verifyPinHash(cleanPin, acc.pinHash, acc.pinSalt)) {
+            matchedAccess = acc;
+            break;
+          }
+        }
+      }
+    } catch (err: any) {
+      console.warn('[Firebase] Aviso na consulta ao Firestore durante verificação de PIN:', err?.message || err);
+    }
+  }
+
+  // 3. Fallback: verifica contra o PIN mestre do sistema se configurado
+  if (!matchedAccess && securityConfig.pinHash && securityConfig.pinSalt) {
+    if (verifyPinHash(cleanPin, securityConfig.pinHash, securityConfig.pinSalt)) {
+      matchedAccess = {
+        id: 'access-general',
+        name: 'Acesso Geral da Biblioteca',
+        pinHash: securityConfig.pinHash,
+        pinSalt: securityConfig.pinSalt,
+        status: 'active',
+        createdAt: securityConfig.lastPinChangedAt || new Date().toISOString(),
+        expiresAt: null,
+        lastUsedAt: null,
+        hasProfile: false,
+      };
+    }
+  }
 
   // Se nenhum PIN conferiu: conta falha no rate limiter
   if (!matchedAccess) {
@@ -868,8 +912,10 @@ app.post('/api/auth/verify-pin', (req, res) => {
       const remainingSeconds = Math.ceil(READER_LOCKOUT_MS / 1000);
       res.status(429).json({
         success: false,
+        code: 'rate_limited',
         error: `Limite de tentativas excedido. Aguarde ${remainingSeconds} segundos antes de tentar novamente.`,
         retryAfter: remainingSeconds,
+        diagnostic: 'Limite máximo de 5 tentativas atingido. Dispositivo pausado temporariamente.',
       });
       return;
     }
@@ -879,8 +925,10 @@ app.post('/api/auth/verify-pin', (req, res) => {
 
     res.status(401).json({
       success: false,
-      error: 'PIN incorreto. Verifique os dígitos e tente novamente.',
+      code: 'invalid_pin',
+      error: 'PIN incorreto. Verifique os dígitos fornecidos pelo administrador (sem espaços) e tente novamente.',
       remainingAttempts: attemptsLeft,
+      diagnostic: 'O código informado não confere com nenhum leitor ativo registrado no sistema.',
     });
     return;
   }
@@ -890,7 +938,9 @@ app.post('/api/auth/verify-pin', (req, res) => {
     res.status(403).json({
       success: false,
       isAccessBlocked: true,
-      error: 'Este acesso foi temporariamente bloqueado pela administração.',
+      code: 'access_blocked',
+      error: `O acesso de "${matchedAccess.name}" está temporariamente bloqueado pela administração.`,
+      diagnostic: 'Acesso desativado administrativamente.',
     });
     return;
   }
@@ -900,7 +950,9 @@ app.post('/api/auth/verify-pin', (req, res) => {
     res.status(403).json({
       success: false,
       isAccessRevoked: true,
-      error: 'Este código de acesso foi revogado pela administração e não é mais válido.',
+      code: 'access_revoked',
+      error: `O código de acesso de "${matchedAccess.name}" foi revogado pela administração e não é mais válido.`,
+      diagnostic: 'Código de acesso excluído/revogado definitivamente.',
     });
     return;
   }
@@ -912,7 +964,9 @@ app.post('/api/auth/verify-pin', (req, res) => {
       res.status(403).json({
         success: false,
         isAccessExpired: true,
-        error: 'Este acesso expirou. Solicite um novo PIN ao administrador.',
+        code: 'access_expired',
+        error: `O acesso de "${matchedAccess.name}" expirou. Solicite um novo PIN ao administrador.`,
+        diagnostic: `Prazo de validade expirou em ${new Date(matchedAccess.expiresAt).toLocaleDateString('pt-BR')}.`,
       });
       return;
     }
@@ -921,12 +975,13 @@ app.post('/api/auth/verify-pin', (req, res) => {
   // PIN válido e acesso ativo: reseta rate limit
   readerRateLimitStore.delete(ip);
 
-  // Atualiza lastUsedAt do acesso e persiste
+  // Atualiza lastUsedAt do acesso e persiste no arquivo e no Cloud Firestore
   if (matchedAccess.id && matchedAccess.id !== 'access-general') {
     const accInList = securityConfig.readerAccesses.find((a) => a.id === matchedAccess!.id);
     if (accInList) {
       accInList.lastUsedAt = new Date().toISOString();
       saveSecurityConfig(securityConfig);
+      firebaseServerStore.saveReaderAccess(accInList).catch(() => {});
     }
   }
 
@@ -969,7 +1024,7 @@ app.post('/api/auth/verify-pin', (req, res) => {
 });
 
 // 2.1 Cadastro Pessoal do Leitor no Primeiro Acesso (vinculado ao identificador interno do PIN)
-app.post('/api/auth/reader-profile', (req, res) => {
+app.post('/api/auth/reader-profile', async (req, res) => {
   const token = extractReaderToken(req);
   if (!token) {
     res.status(401).json({ success: false, error: 'Sessão não autorizada ou expirada.' });
@@ -1076,10 +1131,12 @@ app.post('/api/auth/reader-profile', (req, res) => {
   session.readerName = formattedFullName;
   saveSecurityConfig(securityConfig);
 
-  // Sincroniza imediatamente com o Cloud Firestore
-  firebaseServerStore.saveReaderAccess(reader).catch((err) => {
-    console.warn('[Firebase] Erro ao sincronizar cadastro do leitor no Firestore:', err);
-  });
+  // Sincroniza imediatamente com o Cloud Firestore aguardando confirmação
+  try {
+    await firebaseServerStore.saveReaderAccess(reader);
+  } catch (err: any) {
+    console.warn('[Firebase] Erro ao sincronizar cadastro do leitor no Firestore:', err?.message || err);
+  }
 
   res.json({
     success: true,
@@ -1602,7 +1659,7 @@ app.get('/api/admin/readers', requireAdminAuth, (_req, res) => {
 });
 
 // 10.2 Criar novo PIN de leitor (individual, gerado ou manual)
-app.post('/api/admin/readers', requireAdminAuth, (req, res) => {
+app.post('/api/admin/readers', requireAdminAuth, async (req, res) => {
   const { name, pinMode = 'auto', customPin, expiresAt = null, notes, contentPermissions } = req.body || {};
 
   const cleanName = typeof name === 'string' ? name.trim() : '';
@@ -1617,11 +1674,11 @@ app.post('/api/admin/readers', requireAdminAuth, (req, res) => {
   let pinToAssign = '';
 
   if (pinMode === 'manual') {
-    const rawPin = typeof customPin === 'string' ? customPin.trim() : '';
+    const rawPin = standardizePin(customPin);
     if (!rawPin || rawPin.length < 4 || rawPin.length > 12) {
       res.status(400).json({
         success: false,
-        error: 'O PIN manual deve conter entre 4 e 12 dígitos ou caracteres.',
+        error: 'O PIN manual deve conter entre 4 e 12 dígitos ou caracteres (sem espaços).',
       });
       return;
     }
@@ -1632,10 +1689,12 @@ app.post('/api/admin/readers', requireAdminAuth, (req, res) => {
     pinToAssign = String(randomNum);
   }
 
+  pinToAssign = standardizePin(pinToAssign);
+
   // Verifica se o PIN já está em uso por algum acesso existente ou se é duplicado
   const existingAccesses = securityConfig.readerAccesses || [];
   for (const existing of existingAccesses) {
-    if (verifyPinHash(pinToAssign, existing.pinHash, existing.pinSalt)) {
+    if (existing.pinHash && existing.pinSalt && verifyPinHash(pinToAssign, existing.pinHash, existing.pinSalt)) {
       res.status(409).json({
         success: false,
         error: 'Este PIN já está em uso por outro leitor cadastrado. Escolha outro código ou gere automaticamente.',
@@ -1688,6 +1747,8 @@ app.post('/api/admin/readers', requireAdminAuth, (req, res) => {
     expiresAt: cleanExpiresAt,
     lastUsedAt: null,
     notes: typeof notes === 'string' ? notes.trim() : '',
+    hasProfile: false,
+    profile: null,
     contentPermissions: contentPermissions && typeof contentPermissions === 'object' ? contentPermissions : undefined,
   };
 
@@ -1697,10 +1758,13 @@ app.post('/api/admin/readers', requireAdminAuth, (req, res) => {
   securityConfig.readerAccesses.unshift(newRecord);
   saveSecurityConfig(securityConfig);
 
-  // Sincroniza imediatamente com o Cloud Firestore
-  firebaseServerStore.saveReaderAccess(newRecord).catch((err) => {
-    console.warn('[Firebase] Erro ao salvar novo leitor no Firestore:', err);
-  });
+  // Sincroniza imediatamente com o Cloud Firestore aguardando a confirmação
+  try {
+    await firebaseServerStore.saveReaderAccess(newRecord);
+    console.log(`[Firebase] Novo leitor "${newRecord.name}" persistido no Firestore (ID: ${newRecord.id}).`);
+  } catch (err: any) {
+    console.warn('[Firebase] Aviso ao salvar novo leitor no Firestore:', err?.message || err);
+  }
 
   // Retorna o PIN em texto puro APENAS NESTA RESPOSTA de criação (para exibição única)
   res.status(201).json({
@@ -1712,7 +1776,7 @@ app.post('/api/admin/readers', requireAdminAuth, (req, res) => {
 });
 
 // 10.3 Alterar estado de um acesso (bloquear / reativar / revogar)
-app.patch('/api/admin/readers/:id/status', requireAdminAuth, (req, res) => {
+app.patch('/api/admin/readers/:id/status', requireAdminAuth, async (req, res) => {
   const { id } = req.params;
   const { status: targetStatus } = req.body || {};
 
@@ -1735,6 +1799,7 @@ app.patch('/api/admin/readers/:id/status', requireAdminAuth, (req, res) => {
   }
 
   target.status = targetStatus;
+  target.updatedAt = new Date().toISOString();
 
   // Se bloqueado ou revogado, derruba sessões ativas deste leitor imediatamente
   if (targetStatus === 'blocked' || targetStatus === 'revoked') {
@@ -1748,9 +1813,11 @@ app.patch('/api/admin/readers/:id/status', requireAdminAuth, (req, res) => {
   saveSecurityConfig(securityConfig);
 
   // Sincroniza imediatamente com o Cloud Firestore
-  firebaseServerStore.saveReaderAccess(target).catch((err) => {
-    console.warn('[Firebase] Erro ao atualizar status do leitor no Firestore:', err);
-  });
+  try {
+    await firebaseServerStore.saveReaderAccess(target);
+  } catch (err: any) {
+    console.warn('[Firebase] Erro ao atualizar status do leitor no Firestore:', err?.message || err);
+  }
 
   res.json({
     success: true,
@@ -1760,7 +1827,7 @@ app.patch('/api/admin/readers/:id/status', requireAdminAuth, (req, res) => {
 });
 
 // 10.4 Excluir acesso de leitor definitivamente
-app.delete('/api/admin/readers/:id', requireAdminAuth, (req, res) => {
+app.delete('/api/admin/readers/:id', requireAdminAuth, async (req, res) => {
   const { id } = req.params;
 
   const index = (securityConfig.readerAccesses || []).findIndex((a) => a.id === id);
@@ -1784,9 +1851,11 @@ app.delete('/api/admin/readers/:id', requireAdminAuth, (req, res) => {
   saveSecurityConfig(securityConfig);
 
   // Exclui imediatamente do Cloud Firestore
-  firebaseServerStore.deleteReaderAccess(id).catch((err) => {
-    console.warn('[Firebase] Erro ao excluir leitor do Firestore:', err);
-  });
+  try {
+    await firebaseServerStore.deleteReaderAccess(id);
+  } catch (err: any) {
+    console.warn('[Firebase] Erro ao excluir leitor do Firestore:', err?.message || err);
+  }
 
   res.json({
     success: true,
@@ -1811,11 +1880,11 @@ app.post('/api/admin/readers/:id/reset-pin', requireAdminAuth, async (req, res) 
   let pinToAssign = '';
 
   if (pinMode === 'manual') {
-    const rawPin = typeof customPin === 'string' ? customPin.trim() : '';
+    const rawPin = standardizePin(customPin);
     if (!rawPin || rawPin.length < 4 || rawPin.length > 12) {
       res.status(400).json({
         success: false,
-        error: 'O PIN manual deve conter entre 4 e 12 dígitos ou caracteres.',
+        error: 'O PIN manual deve conter entre 4 e 12 dígitos ou caracteres (sem espaços).',
       });
       return;
     }
@@ -1826,10 +1895,12 @@ app.post('/api/admin/readers/:id/reset-pin', requireAdminAuth, async (req, res) 
     pinToAssign = String(randomNum);
   }
 
+  pinToAssign = standardizePin(pinToAssign);
+
   // Verifica se o novo PIN já está em uso por outro leitor cadastrado
   const existingAccesses = securityConfig.readerAccesses || [];
   for (const existing of existingAccesses) {
-    if (existing.id !== id && verifyPinHash(pinToAssign, existing.pinHash, existing.pinSalt)) {
+    if (existing.id !== id && existing.pinHash && existing.pinSalt && verifyPinHash(pinToAssign, existing.pinHash, existing.pinSalt)) {
       res.status(409).json({
         success: false,
         error: 'Este PIN já está em uso por outro leitor cadastrado. Escolha outro código ou gere automaticamente.',
@@ -1847,13 +1918,14 @@ app.post('/api/admin/readers/:id/reset-pin', requireAdminAuth, async (req, res) 
     return;
   }
 
-  // Gera novo salt e hash criptográfico PBKDF2 (30.000 iterações)
+  // Gera novo salt e hash criptográfico PBKDF2 (10.000 iterações com sha256 padronizado)
   const salt = crypto.randomBytes(16).toString('hex');
   const hash = hashPin(pinToAssign, salt);
 
   // Preserva integralmente id, nome, status, validade, histórico e perfil cadastral
   target.pinHash = hash;
   target.pinSalt = salt;
+  target.updatedAt = new Date().toISOString();
 
   // Encerra qualquer sessão ativa anterior deste leitor (invalidação imediata)
   for (const [token, sess] of activeReaderSessions.entries()) {
@@ -1865,11 +1937,12 @@ app.post('/api/admin/readers/:id/reset-pin', requireAdminAuth, async (req, res) 
   // Salva no arquivo local
   saveSecurityConfig(securityConfig);
 
-  // Persiste no Cloud Firestore
+  // Persiste no Cloud Firestore com await garantido
   try {
     await firebaseServerStore.saveReaderAccess(target);
+    console.log(`[Firebase] Redefinição de PIN do leitor "${target.name}" salva com sucesso no Firestore.`);
   } catch (err: any) {
-    console.warn('[Firebase] Aviso ao salvar redefinição de PIN no Firestore:', err.message);
+    console.warn('[Firebase] Aviso ao salvar redefinição de PIN no Firestore:', err?.message || err);
   }
 
   // Retorna o PIN em texto puro APENAS nesta resposta para visualização única do administrador (sem logs)

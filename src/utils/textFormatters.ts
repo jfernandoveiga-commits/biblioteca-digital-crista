@@ -316,3 +316,26 @@ export function calculateDetailedAge(birthDateInput: string, referenceDate: Date
     isValid: true,
   };
 }
+
+/**
+ * Padroniza e higieniza qualquer PIN de acesso:
+ * - Garante conversão estrita para string (evitando falhas quando o valor for numérico)
+ * - Remove espaços no início e no final
+ * - Remove espaços acidentais internos (espaço comum, quebra de linha, tabs)
+ * - Remove caracteres invisíveis/zero-width (U+200B, U+200C, U+200D, U+FEFF, U+00A0 etc.)
+ * - Remove hífens decorativos acidentais (ex: "123-456" -> "123456")
+ */
+export function standardizePin(input: unknown): string {
+  if (input === null || input === undefined) return '';
+  return String(input)
+    .trim()
+    .replace(/[\s\u200B-\u200D\uFEFF\u00A0-]+/g, '');
+}
+
+/**
+ * Valida se o formato do PIN padronizado atende aos requisitos do sistema (4 a 12 caracteres).
+ */
+export function isPinFormatValid(input: unknown): boolean {
+  const pin = standardizePin(input);
+  return pin.length >= 4 && pin.length <= 12;
+}
