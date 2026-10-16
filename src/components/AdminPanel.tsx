@@ -4564,3 +4564,5 @@ const FeatureCard: React.FC<FeatureCardProps> = ({
     </div>
   );
 };
+
+export default AdminPanel;
