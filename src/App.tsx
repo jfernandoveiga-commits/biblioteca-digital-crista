@@ -29,8 +29,6 @@ import {
   Lock,
   Loader2,
   Shield,
-  ShieldCheck,
-  ArrowRight,
   AlertCircle,
   Clock,
   ChevronRight,
@@ -466,36 +464,6 @@ export default function App() {
   // ROTA 4: Aplicação Desbloqueada aos Leitores
   return (
     <>
-      {/* Barra Fixa Soberana de Retorno ao Painel Administrativo */}
-      {isAdminSession && (
-        <aside
-          aria-label="Controle Administrativo Soberano"
-          className="sticky top-0 z-50 bg-gradient-to-r from-amber-500 via-amber-400 to-amber-500 text-stone-950 px-4 py-2 text-xs shadow-md border-b border-amber-600/30 flex items-center justify-between gap-3 font-sans"
-        >
-          <div className="flex items-center gap-2 min-w-0">
-            <span className="p-1 rounded-md bg-stone-950 text-amber-400 shrink-0">
-              <ShieldCheck className="w-3.5 h-3.5" />
-            </span>
-            <span className="font-semibold truncate">
-              Modo Administrador Ativo — Acesso Total à Leitura e ao Acervo
-            </span>
-          </div>
-
-          <div className="flex items-center gap-2 shrink-0">
-            <button
-              type="button"
-              onClick={() => navigateTo('/admin')}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-stone-950 hover:bg-stone-900 text-amber-400 text-xs font-bold shadow-xs transition-colors cursor-pointer"
-              title="Voltar ao Painel Administrativo a qualquer momento"
-            >
-              <Shield className="w-3.5 h-3.5" />
-              <span>Painel Administrativo</span>
-              <ArrowRight className="w-3 h-3" />
-            </button>
-          </div>
-        </aside>
-      )}
-
       {/* 1. VISÃO DO LIVRO LITERÁRIO */}
       {currentView === 'reader' && (
         <>

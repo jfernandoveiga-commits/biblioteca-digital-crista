@@ -1434,7 +1434,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
               </h1>
 
               <p className="text-xs sm:text-sm text-stone-500 dark:text-zinc-400 max-w-xs font-serif leading-relaxed">
-                Gestão e controles soberanos da Biblioteca Digital.
+                Gestão da Biblioteca Digital
               </p>
             </div>
 
