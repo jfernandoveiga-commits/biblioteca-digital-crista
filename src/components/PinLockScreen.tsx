@@ -3,7 +3,6 @@ import {
   Lock,
   Eye,
   EyeOff,
-  BookOpen,
   Loader2,
   ShieldCheck,
   AlertCircle,
@@ -142,14 +141,16 @@ export const PinLockScreen: React.FC<PinLockScreenProps> = ({
         >
           {/* Cabeçalho da Biblioteca */}
           <div className="text-center mb-7">
-            <div
-              className={`w-14 h-14 mx-auto rounded-full flex items-center justify-center mb-4 transition-transform duration-300 ${
-                isDark
-                  ? 'bg-zinc-800/80 text-amber-400 border border-zinc-700/60 shadow-inner'
-                  : 'bg-stone-100 text-stone-700 border border-stone-200 shadow-xs'
-              }`}
-            >
-              <BookOpen className="w-6 h-6 stroke-[1.75]" />
+            {/* Logotipo Oficial da Biblioteca Digital */}
+            <div className="mb-4 flex justify-center">
+              <img
+                src="/icon.svg"
+                alt="Logotipo Oficial da Biblioteca Digital"
+                width={72}
+                height={72}
+                className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl shadow-md shadow-stone-900/10 dark:shadow-black/50 border border-stone-200/80 dark:border-zinc-800 object-contain select-none transition-transform duration-300 hover:scale-105"
+                loading="eager"
+              />
             </div>
 
             <h1

@@ -23,21 +23,44 @@
     "books": {
       "entre-a-cruz-e-o-mundo": {
         "chapters": {
-          "capitulo-2": false,
-          "capitulo-1": true
+          "capitulo-1": true,
+          "capitulo-2": false
         },
         "enabled": true
       },
       "e-ai-crente": {
         "chapters": {
-          "capitulo-2": true,
-          "capitulo-1": true
+          "capitulo-1": true,
+          "capitulo-2": true
         },
         "enabled": true
       }
     }
   },
   "readerAccesses": [
+    {
+      "id": "reader-1792429156207-8efa59b1",
+      "name": "Patrícia Nascimento",
+      "pinHash": "523b78911e0faa1cce9254a88b0b6373ae4ba657010d72ce13c7103c43d8c102",
+      "pinSalt": "05cc2103574d46c6dfea2229c8d05dc7",
+      "status": "active",
+      "createdAt": "2026-10-19T16:59:16.207Z",
+      "expiresAt": null,
+      "lastUsedAt": "2026-10-19T17:58:41.330Z",
+      "notes": "",
+      "hasProfile": true,
+      "profile": {
+        "birthDate": "1992-03-28",
+        "maritalStatus": "Divorciado(a)",
+        "registeredAt": "2026-10-19T17:59:23.251Z",
+        "phoneFormatted": "(19) 99525-1590",
+        "updatedAt": "2026-10-19T17:59:23.251Z",
+        "phone": "19995251590",
+        "fullName": "Patrícia Nascimento",
+        "gender": "Feminino"
+      },
+      "updatedAt": "2026-10-19T17:59:23.251Z"
+    },
     {
       "id": "reader-1791893732551-e38689bb",
       "name": "Ana Clara Carchano Garcia",
@@ -46,37 +69,37 @@
       "status": "active",
       "createdAt": "2026-10-13T12:15:32.551Z",
       "expiresAt": null,
-      "lastUsedAt": "2026-10-16T16:13:37.979Z",
+      "lastUsedAt": "2026-10-19T14:20:18.459Z",
       "notes": "Leitora teste",
       "hasProfile": true,
       "profile": {
-        "updatedAt": "2026-10-16T16:14:53.626Z",
+        "registeredAt": "2026-10-16T16:14:53.626Z",
+        "maritalStatus": "Casado(a)",
+        "fullName": "Ana Clara Carchano Garcia",
         "birthDate": "2006-04-11",
         "phoneFormatted": "(19) 99760-1107",
-        "registeredAt": "2026-10-16T16:14:53.626Z",
-        "fullName": "Ana Clara Carchano Garcia",
-        "gender": "Feminino",
+        "updatedAt": "2026-10-16T16:14:53.626Z",
         "phone": "19997601107",
-        "maritalStatus": "Casado(a)"
+        "gender": "Feminino"
       },
       "contentPermissions": {
         "books": {
           "e-ai-crente": {
-            "chapters": {
-              "capitulo-1": false
-            },
-            "enabled": true
-          },
-          "entre-a-cruz-e-o-mundo": {
             "enabled": true,
             "chapters": {
-              "capitulo-2": false,
-              "capitulo-1": true
+              "capitulo-1": false
             }
+          },
+          "entre-a-cruz-e-o-mundo": {
+            "chapters": {
+              "capitulo-1": true,
+              "capitulo-2": false
+            },
+            "enabled": true
           }
         }
       },
-      "updatedAt": "2026-10-16T16:14:53.626Z"
+      "updatedAt": "2026-10-19T14:20:18.459Z"
     },
     {
       "id": "access-initial-default",
@@ -90,29 +113,29 @@
       "notes": "Acesso inicial configurado pelo sistema",
       "hasProfile": true,
       "profile": {
-        "phoneFormatted": "(19) 98102-6699",
-        "fullName": "Fernando Veiga",
-        "registeredAt": "2026-10-13T12:12:21.075Z",
-        "birthDate": "1967-04-02",
         "gender": "Masculino",
         "phone": "19981026699",
+        "updatedAt": "2026-10-13T12:12:21.075Z",
+        "fullName": "Fernando Veiga",
+        "registeredAt": "2026-10-13T12:12:21.075Z",
         "maritalStatus": "Casado(a)",
-        "updatedAt": "2026-10-13T12:12:21.075Z"
+        "phoneFormatted": "(19) 98102-6699",
+        "birthDate": "1967-04-02"
       },
       "contentPermissions": {
         "books": {
           "entre-a-cruz-e-o-mundo": {
+            "enabled": true,
             "chapters": {
               "capitulo-2": true,
               "capitulo-1": true
-            },
-            "enabled": true
+            }
           },
           "e-ai-crente": {
-            "enabled": true,
             "chapters": {
               "capitulo-1": true
-            }
+            },
+            "enabled": true
           }
         }
       },
