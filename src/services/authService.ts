@@ -13,6 +13,7 @@ import {
   ReaderProfileUpdateInput,
 } from '../types/book';
 import { standardizePin } from '../utils/textFormatters';
+import { adminAuthService } from './adminAuthService';
 
 const SESSION_TOKEN_KEY = 'bib_session_token';
 
@@ -32,11 +33,14 @@ export interface VerifyPinResult {
   accessId?: string;
   readerName?: string;
   hasProfile?: boolean;
+  requiresRegistration?: boolean;
   readerProfile?: ReaderProfile | null;
 }
 
 export interface SessionStatus {
   authenticated: boolean;
+  isAdmin?: boolean;
+  adminUsername?: string;
   expiresAt?: number;
   isLocked?: boolean;
   reason?: string;
@@ -44,6 +48,7 @@ export interface SessionStatus {
   accessId?: string;
   readerName?: string;
   hasProfile?: boolean;
+  requiresRegistration?: boolean;
   readerProfile?: ReaderProfile | null;
   features?: LibraryFeaturesConfig;
   contentAvailability?: ContentAvailabilityConfig;
@@ -88,10 +93,16 @@ export const authService = {
    */
   async checkSession(): Promise<SessionStatus> {
     const token = this.getToken();
+    const adminToken = adminAuthService.getToken();
     try {
       const headers: Record<string, string> = {};
+      if (adminToken) {
+        headers['X-Admin-Token'] = adminToken;
+      }
       if (token) {
         headers['Authorization'] = `Bearer ${token}`;
+      } else if (adminToken) {
+        headers['Authorization'] = `Bearer ${adminToken}`;
       }
 
       const response = await fetch('/api/auth/session', {
@@ -153,6 +164,7 @@ export const authService = {
           accessId: data.accessId,
           readerName: data.readerName,
           hasProfile: data.hasProfile,
+          requiresRegistration: data.requiresRegistration ?? !data.hasProfile,
           readerProfile: data.readerProfile,
         };
       }
@@ -242,10 +254,16 @@ export const authService = {
     error?: string;
   }> {
     const token = this.getToken();
+    const adminToken = adminAuthService.getToken();
     try {
       const headers: Record<string, string> = {};
+      if (adminToken) {
+        headers['X-Admin-Token'] = adminToken;
+      }
       if (token) {
         headers['Authorization'] = `Bearer ${token}`;
+      } else if (adminToken) {
+        headers['Authorization'] = `Bearer ${adminToken}`;
       }
 
       const response = await fetch('/api/auth/reader-profile', {
@@ -329,12 +347,18 @@ export const authService = {
   async checkAccess(
     bookId: string,
     chapterId: string
-  ): Promise<{ allowed: boolean; error?: string }> {
+  ): Promise<{ allowed: boolean; requiresRegistration?: boolean; isAdmin?: boolean; error?: string }> {
     try {
       const token = this.getToken();
+      const adminToken = adminAuthService.getToken();
       const headers: Record<string, string> = {};
+      if (adminToken) {
+        headers['X-Admin-Token'] = adminToken;
+      }
       if (token) {
         headers['Authorization'] = `Bearer ${token}`;
+      } else if (adminToken) {
+        headers['Authorization'] = `Bearer ${adminToken}`;
       }
       const response = await fetch(`/api/library/check-access/${bookId}/${chapterId}`, {
         method: 'GET',
@@ -344,6 +368,8 @@ export const authService = {
       const data = await response.json();
       return {
         allowed: Boolean(data.allowed),
+        requiresRegistration: Boolean(data.requiresRegistration),
+        isAdmin: Boolean(data.isAdmin),
         error: data.error,
       };
     } catch {

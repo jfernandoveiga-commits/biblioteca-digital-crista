@@ -27,6 +27,7 @@ import {
   Search,
   Check,
   Lock,
+  Shield,
 } from 'lucide-react';
 
 interface BibleReaderProps {
@@ -40,6 +41,8 @@ interface BibleReaderProps {
   onReturnToBook?: () => void;
   onReturnToLibrary: () => void;
   onLogout?: () => void;
+  isAdmin?: boolean;
+  onNavigateToAdmin?: () => void;
 }
 
 export const BibleReader: React.FC<BibleReaderProps> = ({
@@ -53,6 +56,8 @@ export const BibleReader: React.FC<BibleReaderProps> = ({
   onReturnToBook,
   onReturnToLibrary,
   onLogout,
+  isAdmin = false,
+  onNavigateToAdmin,
 }) => {
   const [booksList, setBooksList] = useState<BibleBookMeta[]>([]);
   const [currentBookAbbrev, setCurrentBookAbbrev] = useState<string>(
@@ -272,6 +277,18 @@ export const BibleReader: React.FC<BibleReaderProps> = ({
 
           {/* Controles de leitura e créditos */}
           <div className="flex items-center gap-1 sm:gap-2">
+            {/* Atalho ao Painel Administrativo */}
+            {isAdmin && onNavigateToAdmin && (
+              <button
+                onClick={onNavigateToAdmin}
+                className="flex items-center gap-1.5 py-1.5 px-2.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-stone-950 font-sans text-xs font-bold transition-all shadow-2xs hover:shadow-xs cursor-pointer shrink-0"
+                title="Retornar ao Painel Administrativo"
+              >
+                <Shield className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Painel Admin</span>
+              </button>
+            )}
+
             <PWAInstallButton theme={theme} variant="header" />
 
             <button

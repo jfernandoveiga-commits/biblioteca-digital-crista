@@ -29,10 +29,11 @@
         "enabled": true
       },
       "e-ai-crente": {
-        "enabled": true,
         "chapters": {
+          "capitulo-2": true,
           "capitulo-1": true
-        }
+        },
+        "enabled": true
       }
     }
   },
@@ -45,28 +46,37 @@
       "status": "active",
       "createdAt": "2026-10-13T12:15:32.551Z",
       "expiresAt": null,
-      "lastUsedAt": "2026-10-13T12:29:28.634Z",
+      "lastUsedAt": "2026-10-16T16:13:37.979Z",
       "notes": "Leitora teste",
-      "hasProfile": false,
-      "profile": null,
+      "hasProfile": true,
+      "profile": {
+        "updatedAt": "2026-10-16T16:14:53.626Z",
+        "birthDate": "2006-04-11",
+        "phoneFormatted": "(19) 99760-1107",
+        "registeredAt": "2026-10-16T16:14:53.626Z",
+        "fullName": "Ana Clara Carchano Garcia",
+        "gender": "Feminino",
+        "phone": "19997601107",
+        "maritalStatus": "Casado(a)"
+      },
       "contentPermissions": {
         "books": {
-          "entre-a-cruz-e-o-mundo": {
-            "chapters": {
-              "capitulo-2": false,
-              "capitulo-1": true
-            },
-            "enabled": true
-          },
           "e-ai-crente": {
             "chapters": {
               "capitulo-1": false
             },
             "enabled": true
+          },
+          "entre-a-cruz-e-o-mundo": {
+            "enabled": true,
+            "chapters": {
+              "capitulo-2": false,
+              "capitulo-1": true
+            }
           }
         }
       },
-      "updatedAt": "2026-10-15T10:53:36.558Z"
+      "updatedAt": "2026-10-16T16:14:53.626Z"
     },
     {
       "id": "access-initial-default",
@@ -76,37 +86,37 @@
       "status": "active",
       "createdAt": "2026-10-10T16:41:50.949Z",
       "expiresAt": null,
-      "lastUsedAt": "2026-10-15T18:22:16.416Z",
+      "lastUsedAt": "2026-10-16T11:18:49.499Z",
       "notes": "Acesso inicial configurado pelo sistema",
       "hasProfile": true,
       "profile": {
+        "phoneFormatted": "(19) 98102-6699",
         "fullName": "Fernando Veiga",
+        "registeredAt": "2026-10-13T12:12:21.075Z",
+        "birthDate": "1967-04-02",
+        "gender": "Masculino",
         "phone": "19981026699",
         "maritalStatus": "Casado(a)",
-        "updatedAt": "2026-10-13T12:12:21.075Z",
-        "registeredAt": "2026-10-13T12:12:21.075Z",
-        "phoneFormatted": "(19) 98102-6699",
-        "gender": "Masculino",
-        "birthDate": "1967-04-02"
+        "updatedAt": "2026-10-13T12:12:21.075Z"
       },
       "contentPermissions": {
         "books": {
-          "e-ai-crente": {
-            "chapters": {
-              "capitulo-1": true
-            },
-            "enabled": true
-          },
           "entre-a-cruz-e-o-mundo": {
             "chapters": {
               "capitulo-2": true,
               "capitulo-1": true
             },
             "enabled": true
+          },
+          "e-ai-crente": {
+            "enabled": true,
+            "chapters": {
+              "capitulo-1": true
+            }
           }
         }
       },
-      "updatedAt": "2026-10-15T18:22:16.416Z"
+      "updatedAt": "2026-10-16T11:18:49.500Z"
     }
   ]
 }

@@ -51,6 +51,7 @@ import {
   Server,
   CheckCheck,
   Ban,
+  Pencil,
 } from 'lucide-react';
 import { adminAuthService, AdminSystemStatus } from '../services/adminAuthService';
 import {
@@ -63,10 +64,19 @@ import {
   ReaderAccessStatus,
   ReaderContentPermissions,
   ReaderBookPermission,
+  ReaderGender,
+  ReaderMaritalStatus,
+  ReaderProfileAdminUpdateInput,
 } from '../types/book';
 import { libraryBooks } from '../data/booksCatalog';
 import { PWAInstallButton } from './PWAInstallButton';
-import { calculateDetailedAge, standardizePin } from '../utils/textFormatters';
+import {
+  calculateDetailedAge,
+  standardizePin,
+  formatFullName,
+  formatPhoneNumber,
+  validateBrazilianMobilePhone,
+} from '../utils/textFormatters';
 
 interface AdminPanelProps {
   theme?: ReadingTheme;
@@ -114,6 +124,26 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'blocked' | 'revoked'>('all');
   const [registrationFilter, setRegistrationFilter] = useState<'all' | 'registered' | 'pending'>('all');
   const [selectedReaderDetails, setSelectedReaderDetails] = useState<ReaderAccessRecord | null>(null);
+
+  // Modal e Formulário de Edição de Cadastro de Leitor
+  const [editingReader, setEditingReader] = useState<ReaderAccessRecord | null>(null);
+  const [editForm, setEditForm] = useState<{
+    fullName: string;
+    phone: string;
+    birthDate: string;
+    gender: ReaderGender;
+    maritalStatus: ReaderMaritalStatus;
+    notes: string;
+  }>({
+    fullName: '',
+    phone: '',
+    birthDate: '',
+    gender: 'Prefiro não informar',
+    maritalStatus: 'Prefiro não informar',
+    notes: '',
+  });
+  const [isSavingEdit, setIsSavingEdit] = useState<boolean>(false);
+  const [editError, setEditError] = useState<string | null>(null);
 
   // Permissões de Livros e Capítulos na Ficha Cadastral do Leitor
   const [readerContentPermissions, setReaderContentPermissions] = useState<ReaderContentPermissions>({
@@ -205,6 +235,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         enabled: true,
         chapters: {
           'capitulo-1': true,
+          'capitulo-2': true,
         },
       },
     },
@@ -618,6 +649,81 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         }
       },
     });
+  };
+
+  // Abrir modal de edição de cadastro do leitor
+  const handleOpenEditReaderModal = (reader: ReaderAccessRecord) => {
+    setEditingReader(reader);
+    setEditError(null);
+    const p = reader.profile;
+    setEditForm({
+      fullName: p?.fullName || reader.name || '',
+      phone: p?.phoneFormatted || (p?.phone ? formatPhoneNumber(p.phone) : ''),
+      birthDate: p?.birthDate || '',
+      gender: p?.gender || 'Prefiro não informar',
+      maritalStatus: p?.maritalStatus || 'Prefiro não informar',
+      notes: reader.notes || '',
+    });
+  };
+
+  // Salvar alterações cadastrais do leitor diretamente no Firebase Cloud Firestore
+  const handleSaveEditReader = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!editingReader || isSavingEdit) return;
+
+    const trimmedName = editForm.fullName.trim();
+    if (!trimmedName || trimmedName.length < 3) {
+      setEditError('Por favor, informe o nome completo do leitor (mínimo 3 caracteres).');
+      return;
+    }
+    const formattedName = formatFullName(trimmedName);
+    if (formattedName.split(' ').length < 2) {
+      setEditError('Por favor, informe o nome e sobrenome do leitor.');
+      return;
+    }
+
+    const phoneValidation = validateBrazilianMobilePhone(editForm.phone);
+    if (!phoneValidation.isValid) {
+      setEditError(phoneValidation.error || 'Número de WhatsApp/celular inválido com DDD.');
+      return;
+    }
+
+    const ageValidation = calculateDetailedAge(editForm.birthDate);
+    if (!ageValidation.isValid) {
+      setEditError(ageValidation.error || 'Data de nascimento inválida ou futura.');
+      return;
+    }
+
+    setIsSavingEdit(true);
+    setEditError(null);
+
+    try {
+      const res = await adminAuthService.updateReaderProfile(editingReader.id, {
+        fullName: formattedName,
+        phone: phoneValidation.normalized,
+        birthDate: editForm.birthDate,
+        gender: editForm.gender,
+        maritalStatus: editForm.maritalStatus,
+        notes: editForm.notes,
+      });
+
+      if (res.success && res.access) {
+        setReaders((prev) =>
+          prev.map((r) => (r.id === res.access!.id ? res.access! : r))
+        );
+        if (selectedReaderDetails?.id === res.access.id) {
+          setSelectedReaderDetails(res.access);
+        }
+        setActionSuccessMessage(`Cadastro de "${res.access.name}" atualizado com sucesso no Firebase Cloud Firestore!`);
+        setEditingReader(null);
+      } else {
+        setEditError(res.error || 'Falha ao salvar as alterações do cadastro.');
+      }
+    } catch {
+      setEditError('Erro inesperado ao salvar alterações. Tente novamente.');
+    } finally {
+      setIsSavingEdit(false);
+    }
   };
 
   // Abrir modal de redefinição de PIN
@@ -1479,6 +1585,18 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
           </div>
 
           <div className="flex items-center gap-2">
+            {/* Atalho Destacado: Abrir Biblioteca como Administrador */}
+            <button
+              type="button"
+              onClick={onNavigateToLibrary}
+              className="inline-flex items-center gap-2 py-2 px-3.5 sm:px-4 rounded-xl text-xs font-semibold bg-amber-500 hover:bg-amber-400 text-stone-950 shadow-xs hover:shadow-sm transition-all cursor-pointer font-sans"
+              title="Abrir a Biblioteca Digital como Administrador sem passar pela tela de PIN"
+            >
+              <BookOpen className="w-4 h-4 shrink-0" />
+              <span className="hidden sm:inline">Abrir Biblioteca como Administrador</span>
+              <span className="sm:hidden">Acessar Leitura</span>
+            </button>
+
             <button
               onClick={fetchStatus}
               disabled={isLoadingStatus}
@@ -2261,7 +2379,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                                   ) : (
                                     <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-100 text-amber-800 dark:bg-amber-950/70 dark:text-amber-300">
                                       <Clock className="w-2.5 h-2.5" />
-                                      Aguardando PIN
+                                      Aguardando Cadastro
                                     </span>
                                   )}
                                 </div>
@@ -2407,6 +2525,16 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                                     title="Ver ficha cadastral completa deste leitor"
                                   >
                                     <Eye className="w-4 h-4" />
+                                  </button>
+
+                                  {/* Botão Editar Cadastro */}
+                                  <button
+                                    type="button"
+                                    onClick={() => handleOpenEditReaderModal(reader)}
+                                    className="p-1.5 rounded-lg text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/40 transition-colors cursor-pointer"
+                                    title="Editar dados cadastrais e observações deste leitor"
+                                  >
+                                    <Pencil className="w-4 h-4" />
                                   </button>
 
                                   {/* Botão Redefinir PIN */}
@@ -4078,7 +4206,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                   ) : (
                     <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 dark:bg-amber-950/70 dark:text-amber-300">
                       <Clock className="w-3 h-3" />
-                      Aguardando Primeiro Acesso
+                      Aguardando Cadastro
                     </span>
                   )}
                 </div>
@@ -4409,6 +4537,21 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
             {/* Rodapé da Modal com Ações Rápidas */}
             <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 pt-5 mt-5 border-t border-stone-100 dark:border-zinc-800">
               <div className="flex flex-wrap items-center gap-2">
+                {/* Botão Editar Cadastro */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    const target = selectedReaderDetails;
+                    setSelectedReaderDetails(null);
+                    handleOpenEditReaderModal(target);
+                  }}
+                  className="px-3.5 py-2 rounded-xl text-xs font-semibold bg-stone-900 hover:bg-stone-800 text-white dark:bg-zinc-100 dark:hover:bg-white dark:text-zinc-900 transition-colors cursor-pointer flex items-center gap-1.5 shadow-2xs"
+                  title="Editar dados pessoais e observações deste leitor"
+                >
+                  <Pencil className="w-3.5 h-3.5" />
+                  <span>Editar Cadastro</span>
+                </button>
+
                 {/* Botão Redefinir PIN */}
                 <button
                   type="button"
@@ -4469,6 +4612,270 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                 Fechar
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL DE EDIÇÃO DE CADASTRO DO LEITOR */}
+      {editingReader && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-200 overflow-y-auto"
+        >
+          <div
+            className={`w-full max-w-xl my-8 rounded-3xl p-6 sm:p-8 shadow-2xl border transition-all ${
+              isDark ? 'bg-zinc-900 border-zinc-800 text-zinc-100' : 'bg-white border-stone-200 text-stone-900'
+            }`}
+          >
+            {/* Cabeçalho do Modal */}
+            <div className="flex items-start justify-between gap-4 pb-4 border-b border-black/5 dark:border-white/5 mb-6">
+              <div className="flex items-center gap-3">
+                <div className="w-11 h-11 rounded-2xl bg-amber-500/15 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
+                  <Pencil className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-serif font-bold text-lg sm:text-xl text-stone-900 dark:text-zinc-50">
+                    Editar Cadastro do Leitor
+                  </h3>
+                  <p className="text-xs text-stone-500 dark:text-zinc-400 mt-0.5">
+                    Atualize os dados pessoais e observações. O PIN e as permissões de acesso permanecem intactos.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEditingReader(null)}
+                disabled={isSavingEdit}
+                className="p-2 rounded-xl text-stone-400 hover:text-stone-700 dark:hover:text-zinc-200 hover:bg-black/5 dark:hover:bg-white/5 transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Status do PIN e Identificação Segura */}
+            <div className="mb-5 p-3.5 rounded-2xl bg-stone-50 dark:bg-zinc-800/50 border border-stone-200/80 dark:border-zinc-800 flex items-center justify-between text-xs">
+              <div className="flex items-center gap-2">
+                <ShieldCheck className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                <span className="font-mono text-[11px] text-stone-500 dark:text-zinc-400">
+                  ID: {editingReader.id}
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] text-stone-400 dark:text-zinc-500">Status do PIN:</span>
+                <span
+                  className={`px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase ${
+                    editingReader.status === 'active'
+                      ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/70 dark:text-emerald-300'
+                      : editingReader.status === 'blocked'
+                      ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/70 dark:text-amber-300'
+                      : 'bg-rose-100 text-rose-800 dark:bg-rose-950/70 dark:text-rose-300'
+                  }`}
+                >
+                  {editingReader.status === 'active'
+                    ? 'Ativo'
+                    : editingReader.status === 'blocked'
+                    ? 'Bloqueado'
+                    : 'Revogado'}
+                </span>
+              </div>
+            </div>
+
+            {/* Mensagem de Erro de Validação */}
+            {editError && (
+              <div className="mb-5 p-3 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/50 text-rose-700 dark:text-rose-300 text-xs flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 shrink-0" />
+                <span>{editError}</span>
+              </div>
+            )}
+
+            {/* Formulário de Edição */}
+            <form onSubmit={handleSaveEditReader} className="space-y-4">
+              {/* Campo 1: Nome Completo */}
+              <div>
+                <label className="block text-xs font-semibold mb-1.5 text-stone-700 dark:text-zinc-300">
+                  Nome Completo <span className="text-rose-500">*</span>
+                </label>
+                <div className="relative">
+                  <UserCheck className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-stone-400" />
+                  <input
+                    type="text"
+                    required
+                    value={editForm.fullName}
+                    onChange={(e) => {
+                      setEditForm((prev) => ({ ...prev, fullName: e.target.value }));
+                      if (editError) setEditError(null);
+                    }}
+                    placeholder="Ex: Fernando Veiga da Silva"
+                    className={`w-full pl-10 pr-4 py-2.5 rounded-xl text-xs border transition-colors outline-hidden ${
+                      isDark
+                        ? 'bg-zinc-800/80 border-zinc-700 text-zinc-100 focus:border-amber-400'
+                        : 'bg-stone-50 border-stone-300 text-stone-900 focus:border-amber-500'
+                    }`}
+                  />
+                </div>
+              </div>
+
+              {/* Linha Dupla: WhatsApp e Nascimento */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                {/* Campo 2: WhatsApp / Celular */}
+                <div>
+                  <label className="block text-xs font-semibold mb-1.5 text-stone-700 dark:text-zinc-300">
+                    WhatsApp / Celular com DDD <span className="text-rose-500">*</span>
+                  </label>
+                  <div className="relative">
+                    <MessageCircle className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-stone-400" />
+                    <input
+                      type="tel"
+                      required
+                      value={editForm.phone}
+                      onChange={(e) => {
+                        const formatted = formatPhoneNumber(e.target.value);
+                        setEditForm((prev) => ({ ...prev, phone: formatted }));
+                        if (editError) setEditError(null);
+                      }}
+                      placeholder="(19) 98102-6699"
+                      className={`w-full pl-10 pr-4 py-2.5 rounded-xl text-xs font-mono border transition-colors outline-hidden ${
+                        isDark
+                          ? 'bg-zinc-800/80 border-zinc-700 text-zinc-100 focus:border-amber-400'
+                          : 'bg-stone-50 border-stone-300 text-stone-900 focus:border-amber-500'
+                      }`}
+                    />
+                  </div>
+                </div>
+
+                {/* Campo 3: Data de Nascimento */}
+                <div>
+                  <label className="block text-xs font-semibold mb-1.5 text-stone-700 dark:text-zinc-300">
+                    Data de Nascimento <span className="text-rose-500">*</span>
+                  </label>
+                  <div className="relative">
+                    <Calendar className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-stone-400" />
+                    <input
+                      type="date"
+                      required
+                      value={editForm.birthDate}
+                      onChange={(e) => {
+                        setEditForm((prev) => ({ ...prev, birthDate: e.target.value }));
+                        if (editError) setEditError(null);
+                      }}
+                      className={`w-full pl-10 pr-4 py-2.5 rounded-xl text-xs font-mono border transition-colors outline-hidden ${
+                        isDark
+                          ? 'bg-zinc-800/80 border-zinc-700 text-zinc-100 focus:border-amber-400'
+                          : 'bg-stone-50 border-stone-300 text-stone-900 focus:border-amber-500'
+                      }`}
+                    />
+                  </div>
+                  {/* Prévia da idade calculada */}
+                  {editForm.birthDate && (
+                    <div className="text-[11px] text-amber-700 dark:text-amber-400 mt-1 font-sans">
+                      Idade calculada: {getReaderDetailedAge(editForm.birthDate)}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Linha Dupla: Sexo e Estado Civil */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                {/* Campo 4: Sexo */}
+                <div>
+                  <label className="block text-xs font-semibold mb-1.5 text-stone-700 dark:text-zinc-300">
+                    Sexo
+                  </label>
+                  <select
+                    value={editForm.gender}
+                    onChange={(e: any) =>
+                      setEditForm((prev) => ({ ...prev, gender: e.target.value }))
+                    }
+                    className={`w-full px-3.5 py-2.5 rounded-xl text-xs border transition-colors outline-hidden cursor-pointer ${
+                      isDark
+                        ? 'bg-zinc-800/80 border-zinc-700 text-zinc-100'
+                        : 'bg-stone-50 border-stone-300 text-stone-900'
+                    }`}
+                  >
+                    <option value="Feminino">Feminino</option>
+                    <option value="Masculino">Masculino</option>
+                    <option value="Prefiro não informar">Prefiro não informar</option>
+                  </select>
+                </div>
+
+                {/* Campo 5: Estado Civil */}
+                <div>
+                  <label className="block text-xs font-semibold mb-1.5 text-stone-700 dark:text-zinc-300">
+                    Estado Civil
+                  </label>
+                  <select
+                    value={editForm.maritalStatus}
+                    onChange={(e: any) =>
+                      setEditForm((prev) => ({ ...prev, maritalStatus: e.target.value }))
+                    }
+                    className={`w-full px-3.5 py-2.5 rounded-xl text-xs border transition-colors outline-hidden cursor-pointer ${
+                      isDark
+                        ? 'bg-zinc-800/80 border-zinc-700 text-zinc-100'
+                        : 'bg-stone-50 border-stone-300 text-stone-900'
+                    }`}
+                  >
+                    <option value="Solteiro(a)">Solteiro(a)</option>
+                    <option value="Casado(a)">Casado(a)</option>
+                    <option value="União estável">União estável</option>
+                    <option value="Separado(a)">Separado(a)</option>
+                    <option value="Divorciado(a)">Divorciado(a)</option>
+                    <option value="Viúvo(a)">Viúvo(a)</option>
+                    <option value="Prefiro não informar">Prefiro não informar</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Campo 6: Observações Internas */}
+              <div>
+                <label className="block text-xs font-semibold mb-1.5 text-stone-700 dark:text-zinc-300">
+                  Observações Internas (Pastoral / Administrativo)
+                </label>
+                <textarea
+                  rows={2}
+                  value={editForm.notes}
+                  onChange={(e) =>
+                    setEditForm((prev) => ({ ...prev, notes: e.target.value }))
+                  }
+                  placeholder="Ex: Membro da liderança de jovens, leitor assíduo, etc."
+                  className={`w-full px-3.5 py-2.5 rounded-xl text-xs border transition-colors outline-hidden resize-none ${
+                    isDark
+                      ? 'bg-zinc-800/80 border-zinc-700 text-zinc-100 focus:border-amber-400'
+                      : 'bg-stone-50 border-stone-300 text-stone-900 focus:border-amber-500'
+                  }`}
+                />
+              </div>
+
+              {/* Rodapé e Botões de Ação */}
+              <div className="pt-4 mt-6 border-t border-black/5 dark:border-white/5 flex items-center justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={() => setEditingReader(null)}
+                  disabled={isSavingEdit}
+                  className="px-4 py-2.5 rounded-xl text-xs font-semibold border border-stone-300 dark:border-zinc-700 text-stone-700 dark:text-zinc-300 hover:bg-stone-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer"
+                >
+                  Cancelar
+                </button>
+
+                <button
+                  type="submit"
+                  disabled={isSavingEdit}
+                  className="px-5 py-2.5 rounded-xl text-xs font-semibold bg-amber-500 hover:bg-amber-400 text-stone-950 transition-colors flex items-center gap-2 cursor-pointer shadow-md disabled:opacity-50"
+                >
+                  {isSavingEdit ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      <span>Salvando no Firestore...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Check className="w-3.5 h-3.5" />
+                      <span>Salvar Alterações</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

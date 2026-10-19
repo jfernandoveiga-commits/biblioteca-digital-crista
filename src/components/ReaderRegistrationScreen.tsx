@@ -59,12 +59,18 @@ export const ReaderRegistrationScreen: React.FC<ReaderRegistrationScreenProps> =
   onRegistrationSuccess,
   onLogout,
 }) => {
-  // Campos do formulário - iniciam totalmente em branco
-  const [fullName, setFullName] = useState<string>('');
+  // Campos do formulário - preenche o nome inicial se informado pelo administrador
+  const [fullName, setFullName] = useState<string>(initialName || '');
   const [phone, setPhone] = useState<string>('');
   const [birthDate, setBirthDate] = useState<string>('');
   const [gender, setGender] = useState<ReaderGender | ''>('');
   const [maritalStatus, setMaritalStatus] = useState<ReaderMaritalStatus | ''>('');
+
+  React.useEffect(() => {
+    if (initialName && !fullName) {
+      setFullName(initialName);
+    }
+  }, [initialName]);
 
   // Estados de controle e validação
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);

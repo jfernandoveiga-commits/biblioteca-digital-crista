@@ -13,6 +13,7 @@ import {
   ReaderAccessCreatedResult,
   ReaderAccessStatus,
   ReaderContentPermissions,
+  ReaderProfileAdminUpdateInput,
 } from '../types/book';
 
 const ADMIN_TOKEN_KEY = 'bib_admin_session_token';
@@ -588,6 +589,48 @@ export const adminAuthService = {
       return {
         success: false,
         error: 'Erro de conexão ao atualizar permissões do leitor.',
+      };
+    }
+  },
+
+  /**
+   * Atualiza os dados cadastrais pessoais e observações do leitor diretamente (salvando no Firestore)
+   */
+  async updateReaderProfile(
+    id: string,
+    input: ReaderProfileAdminUpdateInput
+  ): Promise<{
+    success: boolean;
+    access?: ReaderAccessRecord;
+    message?: string;
+    error?: string;
+  }> {
+    try {
+      const response = await fetch(`/api/admin/readers/${id}/profile`, {
+        method: 'PUT',
+        headers: this.getAuthHeaders(),
+        body: JSON.stringify(input),
+        credentials: 'include',
+      });
+
+      const data = await response.json();
+      if (!response.ok || !data.success) {
+        return {
+          success: false,
+          error: data.error || 'Falha ao atualizar dados cadastrais do leitor.',
+        };
+      }
+
+      return {
+        success: true,
+        access: data.access,
+        message: data.message,
+      };
+    } catch (err) {
+      console.error('[adminAuthService] Erro ao atualizar perfil do leitor:', err);
+      return {
+        success: false,
+        error: 'Erro de conexão ao atualizar cadastro do leitor.',
       };
     }
   },

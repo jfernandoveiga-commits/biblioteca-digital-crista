@@ -2,8 +2,9 @@ import { Book } from '../types/book';
 import { chapter1 } from './sampleChapter';
 import { chapter2 } from './chapter2';
 import { eAiCrenteChapter1 } from './eAiCrenteChapter1';
+import { eAiCrenteChapter2 } from './eAiCrenteChapter2';
 
-export { chapter2, eAiCrenteChapter1 };
+export { chapter2, eAiCrenteChapter1, eAiCrenteChapter2 };
 
 /**
  * Catálogo Oficial da Biblioteca Digital.
@@ -38,7 +39,7 @@ export const book1: Book = {
 /**
  * Livro 2: E AÍ, CRENTE!
  * Autor: Pr. Fernando Veiga
- * Capítulo 1: "Crente fofoqueiro: o rádio ambulante do inferno" publicado integralmente
+ * Capítulos publicados: Capítulo 1 e Capítulo 2 publicados integralmente
  */
 export const book2: Book = {
   id: 'e-ai-crente',
@@ -47,11 +48,11 @@ export const book2: Book = {
   genre: 'Vida Cristã, Juventude e Discipulado',
   synopsis:
     'Reflexões, exortações e ensinamentos práticos do Pr. Fernando Veiga para a juventude cristã, abordando fé autêntica, santidade e vida no cotidiano.',
-  totalChapters: 1,
+  totalChapters: 2,
   status: 'published',
   editorialNote:
-    'Obra autoral do Pr. Fernando Veiga. Capítulo 1 publicado integralmente conforme texto original fornecido pelo autor.',
-  chapters: [eAiCrenteChapter1],
+    'Obra autoral do Pr. Fernando Veiga. Capítulos 1 e 2 publicados integralmente conforme texto original fornecido pelo autor.',
+  chapters: [eAiCrenteChapter1, eAiCrenteChapter2],
 };
 
 /**

@@ -13,6 +13,7 @@ import {
   X,
   ChevronDown,
   ChevronUp,
+  Shield,
 } from 'lucide-react';
 import { ReadingTheme, FontSizeScale, LibraryFeaturesConfig } from '../types/book';
 import { PWAInstallButton } from './PWAInstallButton';
@@ -29,6 +30,8 @@ interface ReadingHeaderProps {
   onReturnToLibrary: () => void;
   onOpenBible?: () => void;
   onLogout?: () => void;
+  isAdmin?: boolean;
+  onNavigateToAdmin?: () => void;
   features?: LibraryFeaturesConfig;
   // Pesquisa
   isSearchOpen?: boolean;
@@ -60,6 +63,8 @@ export const ReadingHeader: React.FC<ReadingHeaderProps> = ({
   onReturnToLibrary,
   onOpenBible,
   onLogout,
+  isAdmin = false,
+  onNavigateToAdmin,
   features,
   // Pesquisa
   isSearchOpen = false,
@@ -276,6 +281,18 @@ export const ReadingHeader: React.FC<ReadingHeaderProps> = ({
             >
               <BookOpen className="w-3.5 h-3.5 opacity-75 text-stone-500 dark:text-amber-400" />
               <span>Bíblia</span>
+            </button>
+          )}
+
+          {/* Botão de Retorno Rápido ao Painel Administrativo */}
+          {isAdmin && onNavigateToAdmin && (
+            <button
+              onClick={onNavigateToAdmin}
+              className="flex items-center gap-1.5 py-1.5 px-2.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-stone-950 font-sans text-xs font-bold transition-all shadow-2xs hover:shadow-xs cursor-pointer shrink-0"
+              title="Retornar ao Painel Administrativo"
+            >
+              <Shield className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Painel Admin</span>
             </button>
           )}
 

@@ -76,6 +76,7 @@ const DEFAULT_CONTENT_AVAILABILITY: ContentAvailabilityConfig = {
       enabled: true,
       chapters: {
         'capitulo-1': true,
+        'capitulo-2': true,
       },
     },
   },
@@ -530,9 +531,9 @@ function extractReaderToken(req: express.Request): string | null {
 }
 
 function extractAdminToken(req: express.Request): string | null {
-  const authHeader = req.headers.authorization;
-  if (authHeader && authHeader.startsWith('Bearer ')) {
-    return authHeader.substring(7).trim();
+  const customAdminHeader = req.headers['x-admin-token'];
+  if (typeof customAdminHeader === 'string' && customAdminHeader.trim()) {
+    return customAdminHeader.trim();
   }
 
   const cookieHeader = req.headers.cookie;
@@ -545,7 +546,29 @@ function extractAdminToken(req: express.Request): string | null {
     }
   }
 
+  const authHeader = req.headers.authorization;
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    const candidate = authHeader.substring(7).trim();
+    if (activeAdminSessions.has(candidate)) {
+      return candidate;
+    }
+  }
+
   return null;
+}
+
+/**
+ * Validação rigorosa se o leitor já concluiu o preenchimento de todos os seus dados pessoais
+ * (Nome completo formatado com sobrenome, celular WhatsApp com DDD válido e data de nascimento válida)
+ */
+function isReaderProfileComplete(reader?: ReaderAccessRecord | null): boolean {
+  if (!reader) return false;
+  if (!reader.hasProfile || !reader.profile) return false;
+  const p = reader.profile;
+  const hasValidName = typeof p.fullName === 'string' && p.fullName.trim().length >= 3 && p.fullName.trim().includes(' ');
+  const hasValidPhone = typeof p.phone === 'string' && p.phone.replace(/\D/g, '').length >= 10;
+  const hasValidBirth = typeof p.birthDate === 'string' && p.birthDate.trim().length >= 8;
+  return Boolean(hasValidName && hasValidPhone && hasValidBirth);
 }
 
 // Middleware para autorização de Administrador no servidor
@@ -596,6 +619,47 @@ app.get('/api/health', (_req, res) => {
 
 // Consulta de sessão do leitor
 app.get('/api/auth/session', (req, res) => {
+  // 0. Bypass do Administrador: se possuir sessão de administrador ativa, concede acesso total à leitura sem PIN
+  const adminToken = extractAdminToken(req);
+  if (adminToken) {
+    const adminSession = activeAdminSessions.get(adminToken);
+    if (adminSession && Date.now() <= adminSession.expiresAt) {
+      res.json({
+        authenticated: true,
+        isAdmin: true,
+        adminUsername: adminSession.username,
+        readerName: `Administrador (${adminSession.username})`,
+        hasProfile: true,
+        requiresRegistration: false,
+        readerProfile: {
+          fullName: `Administrador (${adminSession.username})`,
+          phone: '',
+          phoneFormatted: 'Acesso Administrativo',
+          birthDate: '1970-01-01',
+          gender: 'Prefiro não informar',
+          maritalStatus: 'Prefiro não informar',
+          registeredAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+        features: securityConfig.features,
+        contentAvailability: {
+          books: Object.fromEntries(
+            Object.keys(securityConfig.contentAvailability.books).map((bId) => [
+              bId,
+              {
+                enabled: true,
+                chapters: Object.fromEntries(
+                  Object.keys(securityConfig.contentAvailability.books[bId]?.chapters || {}).map((cId) => [cId, true])
+                ),
+              },
+            ])
+          ),
+        },
+      });
+      return;
+    }
+  }
+
   // Se o acesso geral à biblioteca estiver temporariamente bloqueado
   if (securityConfig.isLibraryLocked) {
     res.json({
@@ -670,7 +734,7 @@ app.get('/api/auth/session', (req, res) => {
     }
   }
 
-  const hasProfile = Boolean(matchedAccess ? (matchedAccess.hasProfile && matchedAccess.profile) : false);
+  const hasProfile = isReaderProfileComplete(matchedAccess);
 
   // Calcula a disponibilidade efetiva para este leitor:
   // Combina a configuração geral da biblioteca com as permissões individuais do leitor (Liberado/Bloqueado)
@@ -709,6 +773,7 @@ app.get('/api/auth/session', (req, res) => {
     accessId: session.accessId,
     readerName: matchedAccess?.profile?.fullName || matchedAccess?.name || session.readerName || 'Leitor',
     hasProfile,
+    requiresRegistration: !hasProfile,
     readerProfile: matchedAccess?.profile || null,
     features: securityConfig.features,
     contentAvailability: effectiveContentAvailability,
@@ -728,6 +793,16 @@ app.get('/api/library/config', (_req, res) => {
 
 // Verificação de permissão de acesso a livro/capítulo
 app.get('/api/library/check-access/:bookId/:chapterId', (req, res) => {
+  // 0. Bypass do Administrador: permite acesso irrestrito para leitura e auditoria editorial
+  const adminToken = extractAdminToken(req);
+  if (adminToken) {
+    const adminSession = activeAdminSessions.get(adminToken);
+    if (adminSession && Date.now() <= adminSession.expiresAt) {
+      res.json({ allowed: true, isAdmin: true });
+      return;
+    }
+  }
+
   if (securityConfig.isLibraryLocked) {
     res.status(403).json({
       allowed: false,
@@ -766,27 +841,52 @@ app.get('/api/library/check-access/:bookId/:chapterId', (req, res) => {
 
   // 2. Verificação individual do perfil do leitor autenticado
   const readerToken = extractReaderToken(req);
-  if (readerToken) {
-    const session = activeReaderSessions.get(readerToken);
-    if (session?.accessId) {
-      const reader = (securityConfig.readerAccesses || []).find((a) => a.id === session.accessId);
-      if (reader && reader.contentPermissions && reader.contentPermissions.books) {
-        const readerBookPerm = reader.contentPermissions.books[bookId];
-        if (readerBookPerm) {
-          if (readerBookPerm.enabled === false) {
-            res.status(403).json({
-              allowed: false,
-              error: 'O acesso a este livro está bloqueado para o seu perfil de leitor pela administração.',
-            });
-            return;
-          }
-          if (readerBookPerm.chapters && readerBookPerm.chapters[chapterId] === false) {
-            res.status(403).json({
-              allowed: false,
-              error: 'O acesso a este capítulo está bloqueado para o seu perfil de leitor pela administração.',
-            });
-            return;
-          }
+  if (!readerToken) {
+    res.status(401).json({
+      allowed: false,
+      requiresRegistration: false,
+      error: 'Sessão de leitura não autenticada. Informe o PIN para acessar.',
+    });
+    return;
+  }
+
+  const session = activeReaderSessions.get(readerToken);
+  if (!session) {
+    res.status(401).json({
+      allowed: false,
+      requiresRegistration: false,
+      error: 'Sessão expirada. Informe o PIN novamente.',
+    });
+    return;
+  }
+
+  if (session.accessId) {
+    const reader = (securityConfig.readerAccesses || []).find((a) => a.id === session.accessId);
+    if (reader && !isReaderProfileComplete(reader)) {
+      res.status(403).json({
+        allowed: false,
+        requiresRegistration: true,
+        error: 'É obrigatório concluir o preenchimento dos seus dados pessoais antes de acessar a leitura do livro.',
+      });
+      return;
+    }
+
+    if (reader && reader.contentPermissions && reader.contentPermissions.books) {
+      const readerBookPerm = reader.contentPermissions.books[bookId];
+      if (readerBookPerm) {
+        if (readerBookPerm.enabled === false) {
+          res.status(403).json({
+            allowed: false,
+            error: 'O acesso a este livro está bloqueado para o seu perfil de leitor pela administração.',
+          });
+          return;
+        }
+        if (readerBookPerm.chapters && readerBookPerm.chapters[chapterId] === false) {
+          res.status(403).json({
+            allowed: false,
+            error: 'O acesso a este capítulo está bloqueado para o seu perfil de leitor pela administração.',
+          });
+          return;
         }
       }
     }
@@ -1010,7 +1110,7 @@ app.post('/api/auth/verify-pin', async (req, res) => {
   }
   res.setHeader('Set-Cookie', cookieOptions.join('; '));
 
-  const hasProfile = Boolean(matchedAccess.hasProfile && matchedAccess.profile);
+  const hasProfile = isReaderProfileComplete(matchedAccess);
 
   res.json({
     success: true,
@@ -1019,6 +1119,7 @@ app.post('/api/auth/verify-pin', async (req, res) => {
     accessId: matchedAccess.id,
     readerName: matchedAccess.profile?.fullName || matchedAccess.name,
     hasProfile,
+    requiresRegistration: !hasProfile,
     readerProfile: matchedAccess.profile || null,
   });
 });
@@ -1149,6 +1250,30 @@ app.post('/api/auth/reader-profile', async (req, res) => {
 
 // 2.2 Consulta o perfil pessoal do próprio leitor (isolamento estrito: nunca outros leitores)
 app.get('/api/auth/reader-profile', (req, res) => {
+  // Bypass do Administrador: retorna perfil administrativo completo com hasProfile=true
+  const adminToken = extractAdminToken(req);
+  if (adminToken) {
+    const adminSession = activeAdminSessions.get(adminToken);
+    if (adminSession && Date.now() <= adminSession.expiresAt) {
+      res.json({
+        success: true,
+        hasProfile: true,
+        isAdmin: true,
+        profile: {
+          fullName: `Administrador (${adminSession.username})`,
+          phone: '',
+          phoneFormatted: 'Acesso Administrativo',
+          birthDate: '1970-01-01',
+          gender: 'Prefiro não informar',
+          maritalStatus: 'Prefiro não informar',
+          registeredAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+      });
+      return;
+    }
+  }
+
   const token = extractReaderToken(req);
   if (!token) {
     res.status(401).json({ success: false, error: 'Sessão não autorizada.' });
@@ -1823,6 +1948,122 @@ app.patch('/api/admin/readers/:id/status', requireAdminAuth, async (req, res) =>
     success: true,
     access: sanitizeReaderAccess(target),
     message: `Status do acesso de "${target.name}" atualizado para: ${targetStatus}.`,
+  });
+});
+
+// 10.3.1 Atualizar dados cadastrais pessoais e observações do leitor diretamente (salvando no Firestore e preservando PIN)
+app.put('/api/admin/readers/:id/profile', requireAdminAuth, async (req, res) => {
+  const { id } = req.params;
+  const target = (securityConfig.readerAccesses || []).find((a) => a.id === id);
+  if (!target) {
+    res.status(404).json({
+      success: false,
+      error: 'Acesso de leitor não encontrado.',
+    });
+    return;
+  }
+
+  const { fullName, phone, birthDate, gender, maritalStatus, notes } = req.body || {};
+
+  // Validação 1: Nome Completo
+  const rawFullName = typeof fullName === 'string' ? fullName.trim() : '';
+  if (!rawFullName || rawFullName.length < 3) {
+    res.status(400).json({ success: false, error: 'Por favor, informe o nome completo do leitor (mínimo 3 caracteres).' });
+    return;
+  }
+  const formattedFullName = formatFullName(rawFullName);
+  if (formattedFullName.split(' ').length < 2) {
+    res.status(400).json({ success: false, error: 'Por favor, informe nome e sobrenome.' });
+    return;
+  }
+
+  // Validação 2: Celular WhatsApp Brasileiro com DDD
+  const rawPhone = typeof phone === 'string' ? phone.trim() : '';
+  const phoneValidation = validateBrazilianMobilePhone(rawPhone);
+  if (!phoneValidation.isValid) {
+    res.status(400).json({
+      success: false,
+      error: phoneValidation.error || 'Número de telefone celular/WhatsApp inválido. Formato esperado: (DD) 9XXXX-XXXX.',
+    });
+    return;
+  }
+  const normalizedPhone = phoneValidation.normalized;
+  const formattedPhone = formatPhoneNumber(normalizedPhone);
+
+  // Validação 3: Data de nascimento
+  const rawBirthDate = typeof birthDate === 'string' ? birthDate.trim() : '';
+  const ageResult = calculateDetailedAge(rawBirthDate);
+  if (!ageResult.isValid) {
+    res.status(400).json({
+      success: false,
+      error: ageResult.error || 'Data de nascimento inválida ou futura.',
+    });
+    return;
+  }
+
+  // Validação 4: Sexo
+  const validGenders: ReaderGender[] = ['Feminino', 'Masculino', 'Prefiro não informar'];
+  if (!validGenders.includes(gender)) {
+    res.status(400).json({ success: false, error: 'Opção de sexo inválida.' });
+    return;
+  }
+
+  // Validação 5: Estado Civil
+  const validMaritalStatuses: ReaderMaritalStatus[] = [
+    'Solteiro(a)',
+    'Casado(a)',
+    'União estável',
+    'Separado(a)',
+    'Divorciado(a)',
+    'Viúvo(a)',
+    'Prefiro não informar',
+  ];
+  if (!validMaritalStatuses.includes(maritalStatus)) {
+    res.status(400).json({ success: false, error: 'Opção de estado civil inválida.' });
+    return;
+  }
+
+  const now = new Date().toISOString();
+
+  // Atualiza os dados cadastrais mantendo o PIN (pinHash e pinSalt), o status e as permissões estritamente intactos
+  target.name = formattedFullName;
+  if (typeof notes === 'string') {
+    target.notes = notes.trim();
+  }
+  target.hasProfile = true;
+  target.profile = {
+    fullName: formattedFullName,
+    phone: normalizedPhone,
+    phoneFormatted: formattedPhone,
+    birthDate: rawBirthDate,
+    gender,
+    maritalStatus,
+    registeredAt: target.profile?.registeredAt || now,
+    updatedAt: now,
+  };
+  target.updatedAt = now;
+
+  // Atualiza sessões ativas do leitor com o novo nome
+  for (const session of activeReaderSessions.values()) {
+    if (session.accessId === id) {
+      session.readerName = formattedFullName;
+    }
+  }
+
+  saveSecurityConfig(securityConfig);
+
+  // Sincroniza diretamente e imediatamente no Cloud Firestore
+  try {
+    await firebaseServerStore.saveReaderAccess(target);
+    console.log(`[Firebase] Cadastro do leitor "${target.name}" atualizado e persistido no Firestore (ID: ${target.id}).`);
+  } catch (err: any) {
+    console.warn('[Firebase] Aviso ao salvar edição de leitor no Firestore:', err?.message || err);
+  }
+
+  res.json({
+    success: true,
+    access: sanitizeReaderAccess(target),
+    message: `Cadastro de "${target.name}" atualizado com sucesso no Firebase Cloud Firestore.`,
   });
 });
 

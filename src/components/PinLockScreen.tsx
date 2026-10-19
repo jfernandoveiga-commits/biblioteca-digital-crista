@@ -94,7 +94,18 @@ export const PinLockScreen: React.FC<PinLockScreenProps> = ({
       setErrorMessage(null);
       setErrorCode(null);
       setDiagnosticInfo(null);
-      onAuthenticated(result);
+      const isProfileComplete = Boolean(
+        result.hasProfile &&
+        !result.requiresRegistration &&
+        result.readerProfile?.fullName &&
+        result.readerProfile?.phone &&
+        result.readerProfile?.birthDate
+      );
+      onAuthenticated({
+        ...result,
+        hasProfile: isProfileComplete,
+        requiresRegistration: !isProfileComplete,
+      });
     } else {
       setErrorMessage(result.error || 'PIN incorreto. Tente novamente.');
       setErrorCode(result.code || 'invalid_pin');

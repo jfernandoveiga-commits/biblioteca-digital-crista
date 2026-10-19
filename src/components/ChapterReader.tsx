@@ -45,6 +45,8 @@ interface ChapterReaderProps {
   onOpenBible?: () => void;
   onOpenBibleReference?: (target: BibleReferenceTarget) => void;
   onLogout?: () => void;
+  isAdmin?: boolean;
+  onNavigateToAdmin?: () => void;
   features?: LibraryFeaturesConfig;
 }
 
@@ -63,6 +65,8 @@ export const ChapterReader: React.FC<ChapterReaderProps> = ({
   onOpenBible,
   onOpenBibleReference,
   onLogout,
+  isAdmin = false,
+  onNavigateToAdmin,
   features,
 }) => {
   const contentRef = useRef<HTMLElement>(null);
@@ -296,6 +300,8 @@ export const ChapterReader: React.FC<ChapterReaderProps> = ({
         onReturnToLibrary={onReturnToLibrary}
         onOpenBible={isBibleEnabled ? onOpenBible : undefined}
         onLogout={onLogout}
+        isAdmin={isAdmin}
+        onNavigateToAdmin={onNavigateToAdmin}
         features={features}
         // Pesquisa
         isSearchOpen={isSearchOpen}
@@ -637,9 +643,11 @@ export const ChapterReader: React.FC<ChapterReaderProps> = ({
                       )}
                     </div>
 
-                    <div className="font-serif italic text-base sm:text-lg leading-relaxed text-pretty border-l-2 border-amber-600/70 dark:border-amber-400/60 pl-4 my-1 text-stone-850 dark:text-zinc-100">
-                      {item.text}
-                    </div>
+                    {item.text && (
+                      <div className="font-serif italic text-base sm:text-lg leading-relaxed text-pretty border-l-2 border-amber-600/70 dark:border-amber-400/60 pl-4 my-1 text-stone-850 dark:text-zinc-100">
+                        {item.text}
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>

@@ -9,6 +9,7 @@ import { PWAInstallButton } from './components/PWAInstallButton';
 import { OfflineIndicator } from './components/OfflineIndicator';
 import { ReaderRegistrationScreen } from './components/ReaderRegistrationScreen';
 import { authService } from './services/authService';
+import { adminAuthService } from './services/adminAuthService';
 import {
   ReadingTheme,
   FontSizeScale,
@@ -28,6 +29,8 @@ import {
   Lock,
   Loader2,
   Shield,
+  ShieldCheck,
+  ArrowRight,
   AlertCircle,
   Clock,
   ChevronRight,
@@ -47,11 +50,36 @@ export default function App() {
   });
 
   // Estado de controle de acesso por PIN e cadastro pessoal do leitor
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
-  const [isCheckingAuth, setIsCheckingAuth] = useState<boolean>(true);
-  const [hasProfile, setHasProfile] = useState<boolean | null>(null);
-  const [readerProfile, setReaderProfile] = useState<ReaderProfile | null>(null);
-  const [readerName, setReaderName] = useState<string>('');
+  const [isAdminSession, setIsAdminSession] = useState<boolean>(() => {
+    return Boolean(adminAuthService.getToken());
+  });
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
+    return Boolean(adminAuthService.getToken() || authService.getToken());
+  });
+  const [isCheckingAuth, setIsCheckingAuth] = useState<boolean>(() => {
+    return !adminAuthService.getToken();
+  });
+  const [hasProfile, setHasProfile] = useState<boolean | null>(() => {
+    return Boolean(adminAuthService.getToken()) ? true : null;
+  });
+  const [readerProfile, setReaderProfile] = useState<ReaderProfile | null>(() => {
+    if (adminAuthService.getToken()) {
+      return {
+        fullName: 'Administrador',
+        phone: '',
+        phoneFormatted: 'Acesso Administrativo',
+        birthDate: '1970-01-01',
+        gender: 'Prefiro não informar',
+        maritalStatus: 'Prefiro não informar',
+        registeredAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+    }
+    return null;
+  });
+  const [readerName, setReaderName] = useState<string>(() => {
+    return adminAuthService.getToken() ? 'Administrador' : '';
+  });
 
   // Funcionalidades e Disponibilidade gerenciadas pelo Administrador
   const [features, setFeatures] = useState<LibraryFeaturesConfig>(DEFAULT_LIBRARY_FEATURES);
@@ -68,6 +96,7 @@ export default function App() {
         enabled: true,
         chapters: {
           'capitulo-1': true,
+          'capitulo-2': true,
         },
       },
     },
@@ -127,17 +156,59 @@ export default function App() {
     let isMounted = true;
     const loadSessionAndConfig = async () => {
       try {
+        // 1. Verifica se há sessão administrativa ativa no navegador ou servidor
+        let isUserAdmin = false;
+        let adminUsername = '';
+        try {
+          const adminStatus = await adminAuthService.checkSession();
+          if (adminStatus.authenticated) {
+            isUserAdmin = true;
+            adminUsername = adminStatus.username || 'admin';
+          }
+        } catch {
+          // ignora
+        }
+
+        // 2. Consulta status de sessão da biblioteca
         const session = await authService.checkSession();
         if (isMounted) {
-          setIsAuthenticated(session.authenticated);
-          if (session.authenticated) {
-            setHasProfile(session.hasProfile ?? false);
-            setReaderProfile(session.readerProfile || null);
-            setReaderName(session.readerName || '');
+          if (isUserAdmin || session.isAdmin) {
+            setIsAdminSession(true);
+            setIsAuthenticated(true);
+            setHasProfile(true);
+            const admName = session.readerName || `Administrador (${adminUsername || 'admin'})`;
+            setReaderName(admName);
+            setReaderProfile(
+              session.readerProfile || {
+                fullName: admName,
+                phone: '',
+                phoneFormatted: 'Acesso Administrativo',
+                birthDate: '1970-01-01',
+                gender: 'Prefiro não informar',
+                maritalStatus: 'Prefiro não informar',
+                registeredAt: new Date().toISOString(),
+                updatedAt: new Date().toISOString(),
+              }
+            );
           } else {
-            setHasProfile(null);
-            setReaderProfile(null);
-            setReaderName('');
+            setIsAdminSession(false);
+            setIsAuthenticated(session.authenticated);
+            if (session.authenticated) {
+              const isProfileComplete = Boolean(
+                session.hasProfile &&
+                !session.requiresRegistration &&
+                session.readerProfile?.fullName &&
+                session.readerProfile?.phone &&
+                session.readerProfile?.birthDate
+              );
+              setHasProfile(isProfileComplete);
+              setReaderProfile(session.readerProfile || null);
+              setReaderName(session.readerName || '');
+            } else {
+              setHasProfile(false);
+              setReaderProfile(null);
+              setReaderName('');
+            }
           }
           if (session.features) {
             setFeatures(session.features);
@@ -177,6 +248,12 @@ export default function App() {
 
   // Bloqueio manual de acesso / Logout
   const handleLogout = async () => {
+    if (isAdminSession) {
+      try {
+        await adminAuthService.logout();
+      } catch {}
+      setIsAdminSession(false);
+    }
     await authService.logout();
     setIsAuthenticated(false);
     setHasProfile(null);
@@ -258,10 +335,10 @@ export default function App() {
   const hasPreviousChapter = currentChapterIndex > 0;
   const hasNextChapter = currentChapterIndex >= 0 && currentChapterIndex < currentBook.chapters.length - 1;
 
-  // Verificação de disponibilidade editorial do livro e capítulo selecionados
+  // Verificação de disponibilidade editorial do livro e capítulo selecionados (se for administrador ativo, acesso total irrestrito)
   const bookConfig = contentAvailability.books[currentBook.id] || { enabled: true, chapters: {} };
-  const isCurrentBookEnabled = bookConfig.enabled !== false;
-  const isCurrentChapterEnabled = isCurrentBookEnabled && bookConfig.chapters?.[currentChapter.id] !== false;
+  const isCurrentBookEnabled = isAdminSession || bookConfig.enabled !== false;
+  const isCurrentChapterEnabled = isAdminSession || (isCurrentBookEnabled && bookConfig.chapters?.[currentChapter.id] !== false);
 
   // Seleciona um livro e capítulo para ler
   const handleSelectChapter = (bookId: string, chapterId: string) => {
@@ -290,18 +367,34 @@ export default function App() {
     }
   };
 
+  // Verificação contínua no servidor: se o cadastro estiver pendente, trava o leitor no cadastro inicial (a menos que seja admin)
+  useEffect(() => {
+    if (isAuthenticated && hasProfile && !isAdminSession) {
+      authService.checkAccess(currentBookId, currentChapterId).then((res) => {
+        if (res.requiresRegistration) {
+          setHasProfile(false);
+        }
+      });
+    }
+  }, [isAuthenticated, hasProfile, isAdminSession, currentBookId, currentChapterId]);
+
   // ROTA 1: Área Administrativa independente do PIN dos leitores (/admin)
   if (currentRoute.startsWith('/admin')) {
     return (
       <AdminPanel
         theme={theme}
-        onNavigateToLibrary={() => navigateTo('/')}
+        onNavigateToLibrary={() => {
+          setIsAdminSession(true);
+          setIsAuthenticated(true);
+          setHasProfile(true);
+          navigateTo('/');
+        }}
       />
     );
   }
 
   // ROTA 2: Verificação de Sessão Inicial
-  if (isCheckingAuth) {
+  if (isCheckingAuth && !isAdminSession) {
     return (
       <div
         className={`min-h-screen flex flex-col items-center justify-center p-6 transition-colors duration-200 ${
@@ -320,13 +413,21 @@ export default function App() {
   }
 
   // ROTA 3: Tela de Acesso por PIN (se ainda não autenticado no servidor)
-  if (!isAuthenticated) {
+  // BYPASS COMPLETO: administradores nunca passam por esta tela
+  if (!isAuthenticated && !isAdminSession) {
     return (
       <PinLockScreen
         theme={theme}
         onAuthenticated={(result) => {
           setIsAuthenticated(true);
-          setHasProfile(result?.hasProfile ?? false);
+          const isComplete = Boolean(
+            result?.hasProfile &&
+            !result?.requiresRegistration &&
+            result?.readerProfile?.fullName &&
+            result?.readerProfile?.phone &&
+            result?.readerProfile?.birthDate
+          );
+          setHasProfile(isComplete);
           setReaderProfile(result?.readerProfile || null);
           setReaderName(result?.readerName || '');
         }}
@@ -335,25 +436,66 @@ export default function App() {
     );
   }
 
-  // ROTA 3.5: Tela de Cadastro Pessoal do Leitor (Primeiro Acesso com PIN)
-  if (hasProfile === false) {
-    return (
-      <ReaderRegistrationScreen
-        theme={theme}
-        initialName={readerName}
-        onRegistrationSuccess={(profile) => {
-          setHasProfile(true);
-          setReaderProfile(profile);
-          setReaderName(profile.fullName);
-        }}
-        onLogout={handleLogout}
-      />
+  // ROTA 3.5: Obrigatoriedade de Cadastro no Primeiro Acesso
+  // BYPASS COMPLETO: administradores nunca passam pela tela de cadastro de leitor
+  if (!isAdminSession) {
+    const isProfileComplete = Boolean(
+      hasProfile === true &&
+      readerProfile &&
+      readerProfile.fullName &&
+      readerProfile.phone &&
+      readerProfile.birthDate
     );
+
+    if (!isProfileComplete) {
+      return (
+        <ReaderRegistrationScreen
+          theme={theme}
+          initialName={readerName}
+          onRegistrationSuccess={(profile) => {
+            setHasProfile(true);
+            setReaderProfile(profile);
+            setReaderName(profile.fullName);
+          }}
+          onLogout={handleLogout}
+        />
+      );
+    }
   }
 
   // ROTA 4: Aplicação Desbloqueada aos Leitores
   return (
     <>
+      {/* Barra Fixa Soberana de Retorno ao Painel Administrativo */}
+      {isAdminSession && (
+        <aside
+          aria-label="Controle Administrativo Soberano"
+          className="sticky top-0 z-50 bg-gradient-to-r from-amber-500 via-amber-400 to-amber-500 text-stone-950 px-4 py-2 text-xs shadow-md border-b border-amber-600/30 flex items-center justify-between gap-3 font-sans"
+        >
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="p-1 rounded-md bg-stone-950 text-amber-400 shrink-0">
+              <ShieldCheck className="w-3.5 h-3.5" />
+            </span>
+            <span className="font-semibold truncate">
+              Modo Administrador Ativo — Acesso Total à Leitura e ao Acervo
+            </span>
+          </div>
+
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={() => navigateTo('/admin')}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-stone-950 hover:bg-stone-900 text-amber-400 text-xs font-bold shadow-xs transition-colors cursor-pointer"
+              title="Voltar ao Painel Administrativo a qualquer momento"
+            >
+              <Shield className="w-3.5 h-3.5" />
+              <span>Painel Administrativo</span>
+              <ArrowRight className="w-3 h-3" />
+            </button>
+          </div>
+        </aside>
+      )}
+
       {/* 1. VISÃO DO LIVRO LITERÁRIO */}
       {currentView === 'reader' && (
         <>
@@ -471,6 +613,8 @@ export default function App() {
               onOpenBible={features.integratedBible ? handleOpenBibleFromNav : undefined}
               onOpenBibleReference={features.integratedBible ? handleOpenBibleReference : undefined}
               onLogout={handleLogout}
+              isAdmin={isAdminSession}
+              onNavigateToAdmin={() => navigateTo('/admin')}
               hasPreviousChapter={hasPreviousChapter}
               hasNextChapter={hasNextChapter}
               onNextChapter={handleNextChapter}
@@ -494,6 +638,8 @@ export default function App() {
           onReturnToBook={handleReturnToBook}
           onReturnToLibrary={handleReturnToLibrary}
           onLogout={handleLogout}
+          isAdmin={isAdminSession}
+          onNavigateToAdmin={() => navigateTo('/admin')}
         />
       )}
 
@@ -548,7 +694,7 @@ export default function App() {
 
                 {libraryBooks.map((b) => {
                   const bCfg = contentAvailability.books[b.id] || { enabled: true, chapters: {} };
-                  const isBEnabled = bCfg.enabled !== false;
+                  const isBEnabled = isAdminSession || bCfg.enabled !== false;
 
                   return (
                     <div
@@ -567,12 +713,12 @@ export default function App() {
                             </span>
                             <span
                               className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${
-                                isBEnabled
+                                bCfg.enabled !== false
                                   ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300'
                                   : 'bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300'
                               }`}
                             >
-                              {isBEnabled ? 'Liberado' : 'Indisponível'}
+                              {bCfg.enabled !== false ? 'Liberado' : 'Indisponível'}
                             </span>
                           </div>
                           <span className="text-xs text-stone-500 dark:text-zinc-400 font-serif">
@@ -594,7 +740,7 @@ export default function App() {
                           </div>
                         ) : (
                           b.chapters.map((ch) => {
-                            const isChEnabled = isBEnabled && bCfg.chapters?.[ch.id] !== false;
+                            const isChEnabled = isAdminSession || (bCfg.enabled !== false && bCfg.chapters?.[ch.id] !== false);
                             const isCurrent = currentBookId === b.id && currentChapterId === ch.id;
 
                             return (
@@ -665,11 +811,15 @@ export default function App() {
                     setShowLibraryModal(false);
                     navigateTo('/admin');
                   }}
-                  className="w-full sm:w-auto px-3 py-2 rounded-lg border border-stone-200 dark:border-zinc-700 text-stone-600 dark:text-zinc-300 hover:bg-stone-100 dark:hover:bg-zinc-800 text-xs font-medium transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
-                  title="Abrir Área Administrativa"
+                  className={`w-full sm:w-auto px-3 py-2 rounded-lg text-xs font-semibold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                    isAdminSession
+                      ? 'bg-amber-500 hover:bg-amber-400 text-stone-950 shadow-xs'
+                      : 'border border-stone-200 dark:border-zinc-700 text-stone-600 dark:text-zinc-300 hover:bg-stone-100 dark:hover:bg-zinc-800'
+                  }`}
+                  title={isAdminSession ? 'Retornar ao Painel Administrativo' : 'Abrir Área Administrativa'}
                 >
                   <Shield className="w-3.5 h-3.5" />
-                  Admin
+                  <span>{isAdminSession ? 'Painel Admin' : 'Admin'}</span>
                 </button>
 
                 <PWAInstallButton theme={theme} variant="header" />

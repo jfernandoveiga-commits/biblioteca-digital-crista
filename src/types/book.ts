@@ -9,7 +9,7 @@
 
 export interface BiblicalText {
   reference: string;
-  text: string;
+  text?: string;
 }
 
 export type EditorialStatus = 'published' | 'awaiting_publication' | 'in_preparation';
@@ -151,6 +151,15 @@ export interface ReaderProfileUpdateInput {
   birthDate: string;
   gender: ReaderGender;
   maritalStatus: ReaderMaritalStatus;
+}
+
+export interface ReaderProfileAdminUpdateInput {
+  fullName: string;
+  phone: string;
+  birthDate: string;
+  gender: ReaderGender;
+  maritalStatus: ReaderMaritalStatus;
+  notes?: string;
 }
 
 export interface ReaderAccessCreateInput {
