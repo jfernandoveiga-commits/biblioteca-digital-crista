@@ -7,10 +7,6 @@ import {
   ShieldCheck,
   AlertCircle,
   Clock,
-  Shield,
-  HelpCircle,
-  ChevronDown,
-  ChevronUp,
   RefreshCw,
   Info,
 } from 'lucide-react';
@@ -38,7 +34,6 @@ export const PinLockScreen: React.FC<PinLockScreenProps> = ({
   const [diagnosticInfo, setDiagnosticInfo] = useState<string | null>(null);
   const [attemptsLeft, setAttemptsLeft] = useState<number | null>(null);
   const [lockoutSeconds, setLockoutSeconds] = useState<number>(0);
-  const [showHelp, setShowHelp] = useState<boolean>(false);
 
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -65,6 +60,26 @@ export const PinLockScreen: React.FC<PinLockScreenProps> = ({
 
     return () => clearInterval(timer);
   }, [lockoutSeconds]);
+
+  // Atalho secreto de acesso administrativo: 5 cliques rápidos consecutivos no logotipo
+  const secretClickCountRef = useRef<number>(0);
+  const lastSecretClickTimeRef = useRef<number>(0);
+
+  const handleLogoSecretClick = () => {
+    const now = Date.now();
+    // Reseta a contagem se o tempo entre cliques for superior a 650ms
+    if (now - lastSecretClickTimeRef.current > 650) {
+      secretClickCountRef.current = 1;
+    } else {
+      secretClickCountRef.current += 1;
+    }
+    lastSecretClickTimeRef.current = now;
+
+    if (secretClickCountRef.current >= 5) {
+      secretClickCountRef.current = 0;
+      onNavigateToAdmin?.();
+    }
+  };
 
   const handleSubmit = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
@@ -141,14 +156,15 @@ export const PinLockScreen: React.FC<PinLockScreenProps> = ({
         >
           {/* Cabeçalho da Biblioteca */}
           <div className="text-center mb-7">
-            {/* Logotipo Oficial da Biblioteca Digital */}
+            {/* Logotipo Oficial da Biblioteca Digital (com atalho secreto de 5 cliques rápidos) */}
             <div className="mb-4 flex justify-center">
               <img
                 src="/icon.svg"
                 alt="Logotipo Oficial da Biblioteca Digital"
                 width={72}
                 height={72}
-                className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl shadow-md shadow-stone-900/10 dark:shadow-black/50 border border-stone-200/80 dark:border-zinc-800 object-contain select-none transition-transform duration-300 hover:scale-105"
+                onClick={handleLogoSecretClick}
+                className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl shadow-md shadow-stone-900/10 dark:shadow-black/50 border border-stone-200/80 dark:border-zinc-800 object-contain select-none transition-transform duration-300 hover:scale-105 active:scale-95 cursor-default"
                 loading="eager"
               />
             </div>
@@ -174,7 +190,7 @@ export const PinLockScreen: React.FC<PinLockScreenProps> = ({
             <div>
               <label
                 htmlFor="pin-input"
-                className={`block text-xs font-medium uppercase tracking-wider mb-2 ${
+                className={`block text-center text-[11px] font-medium uppercase tracking-wider mb-2 ${
                   isDark ? 'text-zinc-300' : 'text-stone-600'
                 }`}
               >
@@ -295,54 +311,6 @@ export const PinLockScreen: React.FC<PinLockScreenProps> = ({
               )
             )}
 
-            {/* Ajuda e Orientações para Diagnóstico do PIN do Leitor */}
-            <div className="pt-1">
-              <button
-                type="button"
-                onClick={() => setShowHelp(!showHelp)}
-                className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-[11px] font-medium transition-colors cursor-pointer ${
-                  isDark
-                    ? 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/60'
-                    : 'text-stone-600 hover:text-stone-900 hover:bg-stone-100'
-                }`}
-              >
-                <span className="flex items-center gap-1.5">
-                  <HelpCircle className="w-3.5 h-3.5 text-amber-500" />
-                  <span>Dúvidas ou problemas com o PIN de leitor?</span>
-                </span>
-                {showHelp ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-              </button>
-
-              {showHelp && (
-                <div
-                  className={`mt-2 p-3.5 rounded-xl border text-[11px] space-y-2 leading-relaxed animate-in fade-in duration-200 ${
-                    isDark
-                      ? 'bg-zinc-800/60 border-zinc-700/60 text-zinc-300'
-                      : 'bg-stone-50 border-stone-200 text-stone-700'
-                  }`}
-                >
-                  <div className="flex items-start gap-2">
-                    <span className="font-semibold text-amber-600 dark:text-amber-400">•</span>
-                    <p>
-                      <strong>PINs Individuais:</strong> Leitores registrados pelo sistema (como Fernando Veiga e Ana Crachano) possuem códigos de acesso gerados pela administração.
-                    </p>
-                  </div>
-                  <div className="flex items-start gap-2">
-                    <span className="font-semibold text-amber-600 dark:text-amber-400">•</span>
-                    <p>
-                      <strong>Formato dos Dígitos:</strong> O aplicativo higieniza automaticamente espaços acidentais e pontuações ao digitar ou colar.
-                    </p>
-                  </div>
-                  <div className="flex items-start gap-2">
-                    <span className="font-semibold text-amber-600 dark:text-amber-400">•</span>
-                    <p>
-                      <strong>Redefinição Rápida:</strong> Caso haja divergência no código entregue ao leitor, o administrador pode gerar um novo PIN a qualquer momento no Painel Administrativo.
-                    </p>
-                  </div>
-                </div>
-              )}
-            </div>
-
             {/* Botão de envio */}
             <button
               type="submit"
@@ -372,27 +340,18 @@ export const PinLockScreen: React.FC<PinLockScreenProps> = ({
                 : 'border-stone-200/80 text-stone-600'
             }`}
           >
-            <div className="flex items-center justify-center gap-1.5">
-              <ShieldCheck className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
-              <span>Validação protegida no servidor · Sessão criptografada</span>
+            <div className="flex flex-col items-center justify-center text-center leading-snug">
+              <div className="flex items-center justify-center gap-1.5 font-medium">
+                <ShieldCheck className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
+                <span>Validação protegida no servidor</span>
+              </div>
+              <span className="text-[10px] sm:text-[11px] opacity-80 mt-0.5">
+                Sessão criptografada
+              </span>
             </div>
 
             <PWAInstallButton theme={theme} variant="badge" />
           </div>
-        </div>
-
-        {/* Acesso exclusivo para administradores */}
-        <div className="mt-5 text-center">
-          {onNavigateToAdmin && (
-            <button
-              type="button"
-              onClick={onNavigateToAdmin}
-              className="inline-flex items-center gap-1.5 text-xs text-stone-500 hover:text-stone-800 dark:text-zinc-400 dark:hover:text-zinc-200 transition-colors cursor-pointer py-1 px-2.5 rounded-lg hover:bg-stone-200/50 dark:hover:bg-zinc-900"
-            >
-              <Shield className="w-3.5 h-3.5" />
-              <span>Área Administrativa</span>
-            </button>
-          )}
         </div>
       </div>
     </div>

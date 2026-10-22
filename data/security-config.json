@@ -29,11 +29,11 @@
         "enabled": true
       },
       "e-ai-crente": {
+        "enabled": true,
         "chapters": {
-          "capitulo-1": true,
-          "capitulo-2": true
-        },
-        "enabled": true
+          "capitulo-2": true,
+          "capitulo-1": true
+        }
       }
     }
   },
@@ -46,20 +46,20 @@
       "status": "active",
       "createdAt": "2026-10-19T16:59:16.207Z",
       "expiresAt": null,
-      "lastUsedAt": "2026-10-19T17:58:41.330Z",
+      "lastUsedAt": "2026-10-20T14:07:02.524Z",
       "notes": "",
       "hasProfile": true,
       "profile": {
-        "birthDate": "1992-03-28",
-        "maritalStatus": "Divorciado(a)",
-        "registeredAt": "2026-10-19T17:59:23.251Z",
-        "phoneFormatted": "(19) 99525-1590",
-        "updatedAt": "2026-10-19T17:59:23.251Z",
-        "phone": "19995251590",
         "fullName": "Patrícia Nascimento",
-        "gender": "Feminino"
+        "gender": "Feminino",
+        "maritalStatus": "Divorciado(a)",
+        "birthDate": "1992-03-28",
+        "updatedAt": "2026-10-22T17:11:31.584Z",
+        "phone": "19995251590",
+        "registeredAt": "2026-10-19T17:59:23.251Z",
+        "phoneFormatted": "(19) 99525-1590"
       },
-      "updatedAt": "2026-10-19T17:59:23.251Z"
+      "updatedAt": "2026-10-22T17:11:31.584Z"
     },
     {
       "id": "reader-1791893732551-e38689bb",
@@ -73,29 +73,29 @@
       "notes": "Leitora teste",
       "hasProfile": true,
       "profile": {
-        "registeredAt": "2026-10-16T16:14:53.626Z",
-        "maritalStatus": "Casado(a)",
-        "fullName": "Ana Clara Carchano Garcia",
         "birthDate": "2006-04-11",
-        "phoneFormatted": "(19) 99760-1107",
         "updatedAt": "2026-10-16T16:14:53.626Z",
-        "phone": "19997601107",
-        "gender": "Feminino"
+        "phoneFormatted": "(19) 99760-1107",
+        "fullName": "Ana Clara Carchano Garcia",
+        "maritalStatus": "Casado(a)",
+        "registeredAt": "2026-10-16T16:14:53.626Z",
+        "gender": "Feminino",
+        "phone": "19997601107"
       },
       "contentPermissions": {
         "books": {
-          "e-ai-crente": {
-            "enabled": true,
-            "chapters": {
-              "capitulo-1": false
-            }
-          },
           "entre-a-cruz-e-o-mundo": {
             "chapters": {
               "capitulo-1": true,
               "capitulo-2": false
             },
             "enabled": true
+          },
+          "e-ai-crente": {
+            "enabled": true,
+            "chapters": {
+              "capitulo-1": false
+            }
           }
         }
       },
@@ -113,29 +113,29 @@
       "notes": "Acesso inicial configurado pelo sistema",
       "hasProfile": true,
       "profile": {
+        "fullName": "Fernando Veiga",
+        "phoneFormatted": "(19) 98102-6699",
         "gender": "Masculino",
         "phone": "19981026699",
         "updatedAt": "2026-10-13T12:12:21.075Z",
-        "fullName": "Fernando Veiga",
+        "birthDate": "1967-04-02",
         "registeredAt": "2026-10-13T12:12:21.075Z",
-        "maritalStatus": "Casado(a)",
-        "phoneFormatted": "(19) 98102-6699",
-        "birthDate": "1967-04-02"
+        "maritalStatus": "Casado(a)"
       },
       "contentPermissions": {
         "books": {
+          "e-ai-crente": {
+            "chapters": {
+              "capitulo-1": true
+            },
+            "enabled": true
+          },
           "entre-a-cruz-e-o-mundo": {
             "enabled": true,
             "chapters": {
               "capitulo-2": true,
               "capitulo-1": true
             }
-          },
-          "e-ai-crente": {
-            "chapters": {
-              "capitulo-1": true
-            },
-            "enabled": true
           }
         }
       },

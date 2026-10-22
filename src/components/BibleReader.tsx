@@ -277,15 +277,17 @@ export const BibleReader: React.FC<BibleReaderProps> = ({
 
           {/* Controles de leitura e créditos */}
           <div className="flex items-center gap-1 sm:gap-2">
-            {/* Atalho ao Painel Administrativo */}
+            {/* Botão de retorno ao Painel do Administrador (exibido exclusivamente quando sessão admin ativa) */}
             {isAdmin && onNavigateToAdmin && (
               <button
+                type="button"
                 onClick={onNavigateToAdmin}
-                className="flex items-center gap-1.5 py-1.5 px-2.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-stone-950 font-sans text-xs font-bold transition-all shadow-2xs hover:shadow-xs cursor-pointer shrink-0"
-                title="Retornar ao Painel Administrativo"
+                className="inline-flex items-center gap-1.5 py-1.5 px-2.5 sm:px-3 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 active:bg-amber-500/30 text-amber-900 dark:text-amber-300 border border-amber-500/25 font-sans text-xs font-semibold transition-all shadow-2xs hover:shadow-xs cursor-pointer shrink-0"
+                title="Retornar ao Painel do Administrador (acesso exclusivo)"
               >
-                <Shield className="w-3.5 h-3.5" />
+                <Shield className="w-3.5 h-3.5 text-amber-700 dark:text-amber-400" />
                 <span className="hidden sm:inline">Painel Admin</span>
+                <span className="sm:hidden">Admin</span>
               </button>
             )}
 

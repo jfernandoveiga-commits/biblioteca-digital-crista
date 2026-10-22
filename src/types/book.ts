@@ -28,6 +28,7 @@ export interface Chapter {
   estimatedReadingTimeMinutes?: number;
   status?: EditorialStatus;
   editorialNote?: string;
+  headerImage?: string; // Imagem/banner visual de abertura do capítulo
 }
 
 export interface Book {
@@ -40,6 +41,8 @@ export interface Book {
   chapters: Chapter[];
   status?: EditorialStatus;
   editorialNote?: string;
+  coverImage?: string; // Imagem de capa da obra
+  headerImage?: string; // Imagem/banner visual padrão do cabeçalho da obra
 }
 
 export type ReadingTheme = 'paper' | 'cream' | 'sepia' | 'dark';

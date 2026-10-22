@@ -849,5 +849,42 @@ export const adminAuthService = {
       };
     }
   },
+
+  async generateWhatsAppMessage(params: {
+    readerName: string;
+    readerPhone?: string;
+    bookTitle?: string;
+    chapterTitle?: string;
+    prompt?: string;
+    messageType?: 'custom' | 'chapter_notification' | 'reading_feedback' | 'welcome';
+  }): Promise<{
+    success: boolean;
+    message?: string;
+    modelUsed?: string;
+    error?: string;
+  }> {
+    try {
+      const response = await fetch('/api/admin/generate-whatsapp-message', {
+        method: 'POST',
+        headers: this.getAuthHeaders(),
+        body: JSON.stringify(params),
+        credentials: 'include',
+      });
+      const data = await response.json();
+      if (!response.ok || !data.success) {
+        return {
+          success: false,
+          error: data.error || 'Falha ao redigir mensagem com a IA.',
+        };
+      }
+      return data;
+    } catch (err: any) {
+      console.error('[adminAuthService] Erro ao gerar mensagem com IA:', err);
+      return {
+        success: false,
+        error: 'Erro de conexão ao gerar mensagem com a Inteligência Artificial.',
+      };
+    }
+  },
 };
 

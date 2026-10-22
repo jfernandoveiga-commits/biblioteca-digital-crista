@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { libraryBooks } from './data/booksCatalog';
 import { ChapterReader } from './components/ChapterReader';
 import { BibleReader } from './components/BibleReader';
@@ -142,6 +142,26 @@ export default function App() {
     if (typeof window !== 'undefined') {
       window.history.pushState({}, '', path);
       setCurrentRoute(path);
+    }
+  };
+
+  // Atalho secreto de acesso administrativo: 5 cliques rápidos consecutivos no logotipo da modal
+  const modalSecretClickCountRef = useRef<number>(0);
+  const modalSecretLastClickRef = useRef<number>(0);
+
+  const handleModalLogoSecretClick = () => {
+    const now = Date.now();
+    if (now - modalSecretLastClickRef.current > 650) {
+      modalSecretClickCountRef.current = 1;
+    } else {
+      modalSecretClickCountRef.current += 1;
+    }
+    modalSecretLastClickRef.current = now;
+
+    if (modalSecretClickCountRef.current >= 5) {
+      modalSecretClickCountRef.current = 0;
+      setShowLibraryModal(false);
+      navigateTo('/admin');
     }
   };
 
@@ -641,9 +661,14 @@ export default function App() {
 
             <div className="overflow-y-auto pr-1 space-y-4">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-stone-200/70 dark:bg-zinc-800 text-stone-700 dark:text-amber-400 flex items-center justify-center shrink-0">
-                  <Library className="w-5 h-5" />
-                </div>
+                <img
+                  src="/icon.svg"
+                  alt="Logotipo Oficial da Biblioteca Digital"
+                  width={40}
+                  height={40}
+                  onClick={handleModalLogoSecretClick}
+                  className="w-10 h-10 rounded-xl object-contain shadow-xs border border-stone-200/80 dark:border-zinc-800 shrink-0 select-none cursor-default active:scale-95 transition-transform"
+                />
                 <div>
                   <h2 id="library-modal-title" className="text-lg font-serif font-bold text-stone-900 dark:text-zinc-50">
                     Biblioteca Digital
@@ -774,21 +799,20 @@ export default function App() {
                   Bloquear Acesso
                 </button>
 
-                <button
-                  onClick={() => {
-                    setShowLibraryModal(false);
-                    navigateTo('/admin');
-                  }}
-                  className={`w-full sm:w-auto px-3 py-2 rounded-lg text-xs font-semibold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
-                    isAdminSession
-                      ? 'bg-amber-500 hover:bg-amber-400 text-stone-950 shadow-xs'
-                      : 'border border-stone-200 dark:border-zinc-700 text-stone-600 dark:text-zinc-300 hover:bg-stone-100 dark:hover:bg-zinc-800'
-                  }`}
-                  title={isAdminSession ? 'Retornar ao Painel Administrativo' : 'Abrir Área Administrativa'}
-                >
-                  <Shield className="w-3.5 h-3.5" />
-                  <span>{isAdminSession ? 'Painel Admin' : 'Admin'}</span>
-                </button>
+                {isAdminSession && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowLibraryModal(false);
+                      navigateTo('/admin');
+                    }}
+                    className="w-full sm:w-auto px-3 py-2 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 text-amber-900 dark:text-amber-300 border border-amber-500/25 text-xs font-semibold transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                    title="Retornar ao Painel do Administrador"
+                  >
+                    <Shield className="w-3.5 h-3.5 text-amber-700 dark:text-amber-400" />
+                    <span>Painel Admin</span>
+                  </button>
+                )}
 
                 <PWAInstallButton theme={theme} variant="header" />
               </div>

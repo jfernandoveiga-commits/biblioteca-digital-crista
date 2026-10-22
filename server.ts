@@ -9,6 +9,8 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
+import { GoogleGenAI } from '@google/genai';
+
 import { firebaseServerStore } from './src/services/firebaseServerStore';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -2283,6 +2285,134 @@ app.post('/api/admin/firebase/migrate', requireAdminAuth, async (_req, res) => {
     }
   );
   res.json(result);
+});
+
+/* ==========================================================================
+   12. ASSISTENTE DE MENSAGENS INTELIGENTES PARA WHATSAPP (Gemini AI)
+   ========================================================================== */
+
+let geminiAiClient: GoogleGenAI | null = null;
+function getGeminiClient(): GoogleGenAI {
+  if (!geminiAiClient) {
+    geminiAiClient = new GoogleGenAI({
+      apiKey: process.env.GEMINI_API_KEY,
+      httpOptions: {
+        headers: {
+          'User-Agent': 'aistudio-build',
+        },
+      },
+    });
+  }
+  return geminiAiClient;
+}
+
+app.post('/api/admin/generate-whatsapp-message', requireAdminAuth, async (req, res) => {
+  try {
+    const {
+      readerName,
+      readerPhone,
+      bookTitle,
+      chapterTitle,
+      prompt,
+      messageType,
+    } = req.body || {};
+
+    const cleanReaderName = String(readerName || 'Leitor').trim();
+    const firstName = cleanReaderName.split(' ')[0] || cleanReaderName;
+    const cleanBookTitle = bookTitle ? String(bookTitle).trim() : 'Entre a Cruz e o Mundo';
+    const cleanChapterTitle = chapterTitle ? String(chapterTitle).trim() : '';
+
+    const systemInstruction = `Você é o assistente inteligente e sensível de redação pessoal do Pr. Fernando Veiga, autor cristão e pastor na Biblioteca Digital.
+Sua missão é redigir mensagens afetuosas, humanas, acolhedoras, empáticas e edificantes para serem enviadas pelo WhatsApp a leitores cadastrados na biblioteca.
+
+Diretrizes obrigatórias:
+1. Tom de Voz: Caloroso, carinhoso, pastoral, próximo, acolhedor e atencioso (como se o próprio Pr. Fernando Veiga estivesse escrevendo uma mensagem sincera no WhatsApp).
+2. Tratamento Pessoal: Chame o leitor pelo primeiro nome: "${firstName}".
+3. Contexto da Leitura: Mencione com naturalidade a obra "${cleanBookTitle}"${cleanChapterTitle ? ` e o ${cleanChapterTitle}` : ''}.
+4. Formatação Adequada para WhatsApp:
+   - Use parágrafos curtos com espaçamento respirável entre eles.
+   - Use formatação nativa do WhatsApp com *negrito* nos títulos e palavras de destaque.
+   - Use emojis acolhedores com bom senso (📖, 🙏, ✨, 💛, ☕).
+   - Não use sintaxe Markdown de títulos (# ou ##) nem listas duras; o texto deve parecer uma mensagem humana digitada no celular.
+5. Assinatura Fraterna: Finalize sempre com uma bênção ou abraço fraterno e assine como "Pr. Fernando Veiga".
+6. IMPORTANTE: Retorne estritamente o texto final pronto para envio no WhatsApp, sem introduções explicativas, aspas desnecessárias ou metatextos (por exemplo, nunca escreva "Aqui está a mensagem:" ou "Espero que goste").`;
+
+    let userPromptText = '';
+    if (prompt && String(prompt).trim()) {
+      userPromptText = `Solicitação do autor: "${String(prompt).trim()}"
+Nome do leitor: ${cleanReaderName}
+Livro selecionado: ${cleanBookTitle}
+Capítulo selecionado: ${cleanChapterTitle || 'Geral'}`;
+    } else if (messageType === 'chapter_notification') {
+      userPromptText = `Escreva uma mensagem avisando carinhosamente o leitor ${cleanReaderName} que o ${cleanChapterTitle || 'novo capítulo'} do livro ${cleanBookTitle} já está liberado para leitura na Biblioteca Digital, convidando-o para esse momento especial.`;
+    } else if (messageType === 'reading_feedback') {
+      userPromptText = `Escreva uma mensagem afetuosa perguntando ao leitor ${cleanReaderName} como tem sido sua experiência de leitura do ${cleanChapterTitle || 'capítulo atual'} de ${cleanBookTitle}, perguntando com carinho o que mais tocou seu coração e demonstrando interesse genuíno nas impressões dele.`;
+    } else if (messageType === 'welcome') {
+      userPromptText = `Escreva uma mensagem calorosa de boas-vindas para o leitor ${cleanReaderName}, celebrando sua entrada na Biblioteca Digital para ler ${cleanBookTitle}, expressando alegria e orando para que seja um tempo abençoado de crescimento espiritual.`;
+    } else {
+      userPromptText = `Escreva uma mensagem carinhosa do autor Pr. Fernando Veiga para o leitor ${cleanReaderName} sobre a leitura de ${cleanBookTitle}.`;
+    }
+
+    const ai = getGeminiClient();
+    let generatedText = '';
+    let usedModel = 'gemini-3.8-flash';
+
+    // Modelos com fallback resiliente para absorver eventuais picos de demanda
+    const modelsToTry = ['gemini-3.8-flash', 'gemini-2.5-flash'];
+    let lastError: any = null;
+
+    for (const modelName of modelsToTry) {
+      try {
+        const response = await ai.models.generateContent({
+          model: modelName,
+          contents: userPromptText,
+          config: {
+            systemInstruction,
+            temperature: 0.8,
+          },
+        });
+        generatedText = response.text ? response.text.trim() : '';
+        if (generatedText) {
+          usedModel = modelName;
+          break;
+        }
+      } catch (err: any) {
+        lastError = err;
+        console.warn(`[Gemini API] Falha temporária no modelo ${modelName}:`, err?.message || err);
+      }
+    }
+
+    if (!generatedText) {
+      throw lastError || new Error('Não foi possível gerar a resposta com a IA no momento.');
+    }
+
+    // Limpeza de cercas de código, aspas desnecessárias e garantia de UTF-8 perfeito
+    let sanitizedText = generatedText
+      .replace(/^```[a-zA-Z]*\n?/, '')
+      .replace(/\n?```$/, '')
+      .trim();
+
+    if (typeof (sanitizedText as any).normalize === 'function') {
+      sanitizedText = sanitizedText.normalize('NFC');
+    }
+    if (typeof (sanitizedText as any).toWellFormed === 'function') {
+      sanitizedText = (sanitizedText as any).toWellFormed();
+    }
+    sanitizedText = sanitizedText.replace(/\uFFFD/g, '').replace(/\uFEFF/g, '').replace(/\0/g, '');
+    sanitizedText = sanitizedText.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+
+    res.json({
+      success: true,
+      message: sanitizedText,
+      modelUsed: usedModel,
+    });
+  } catch (error: any) {
+    console.error('[admin/generate-whatsapp-message] Erro ao gerar mensagem com Gemini:', error);
+    res.status(500).json({
+      success: false,
+      error: error?.message || 'Falha ao processar solicitação com a IA.',
+    });
+  }
 });
 
 

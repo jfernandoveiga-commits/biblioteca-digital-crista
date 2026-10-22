@@ -24,11 +24,14 @@ import {
   X,
   Trash2,
   Check,
+  BookmarkCheck,
+  Sparkles,
 } from 'lucide-react';
 import { BibleReferenceTarget } from '../types/bible';
 import { parseBibleReference } from '../services/bibleService';
 import { bookmarkStorageService } from '../services/bookmarkStorageService';
 import { audioSpeechService, AudioPlaybackState, AudioSpeedRate } from '../services/audioSpeechService';
+import { smartBookmarkService, SmartBookmark } from '../services/smartBookmarkService';
 
 interface ChapterReaderProps {
   book: Book;
@@ -205,7 +208,177 @@ export const ChapterReader: React.FC<ChapterReaderProps> = ({
     }
   };
 
-  // 4. DESTAQUES DE TEXTO (REFERÊNCIAS BÍBLICAS + PESQUISA)
+  // 4. SISTEMA DE MARCADOR DE PÁGINA INTELIGENTE ("CONTINUAR LENDO")
+  const [restoredToast, setRestoredToast] = useState<{
+    percentage: number;
+    textSnippet?: string;
+  } | null>(null);
+  const [manualBookmarkNotice, setManualBookmarkNotice] = useState<string | null>(null);
+  const isRestoringScrollRef = useRef(false);
+  const hasRestoredInitialScrollRef = useRef(false);
+  const lastSavedYRef = useRef(0);
+
+  // 4.1 Restauração automática da posição exata de leitura ao abrir o capítulo
+  useEffect(() => {
+    hasRestoredInitialScrollRef.current = false;
+    const saved = smartBookmarkService.getBookBookmark(book.id);
+
+    // Se houver marcador para este livro e capítulo específico com progresso significativo
+    if (
+      saved &&
+      saved.chapterId === chapter.id &&
+      saved.scrollY > 100 &&
+      saved.percentage > 3 &&
+      saved.percentage < 98
+    ) {
+      isRestoringScrollRef.current = true;
+      const restoreTimer = setTimeout(() => {
+        // Tenta rolar para o parágrafo exato ou para o scrollY em pixels
+        if (
+          saved.paragraphIndex !== undefined &&
+          paragraphRefs.current[saved.paragraphIndex]
+        ) {
+          paragraphRefs.current[saved.paragraphIndex]?.scrollIntoView({
+            behavior: 'smooth',
+            block: 'center',
+          });
+        } else if (saved.scrollY > 0) {
+          window.scrollTo({ top: saved.scrollY, behavior: 'smooth' });
+        }
+
+        setRestoredToast({
+          percentage: saved.percentage,
+          textSnippet: saved.textSnippet,
+        });
+
+        // Oculta aviso automaticamente após 4.5 segundos
+        const hideToastTimer = setTimeout(() => {
+          setRestoredToast(null);
+        }, 4500);
+
+        // Libera para novos auto-saves após a rolagem suave concluir
+        const releaseTimer = setTimeout(() => {
+          isRestoringScrollRef.current = false;
+          hasRestoredInitialScrollRef.current = true;
+        }, 1200);
+
+        return () => {
+          clearTimeout(hideToastTimer);
+          clearTimeout(releaseTimer);
+        };
+      }, 250);
+
+      return () => clearTimeout(restoreTimer);
+    } else {
+      hasRestoredInitialScrollRef.current = true;
+    }
+  }, [book.id, chapter.id]);
+
+  // 4.2 Auto-save contínuo da posição da leitura com debounce
+  useEffect(() => {
+    const handleAutoSave = () => {
+      if (isRestoringScrollRef.current) return;
+      const currentY = window.scrollY;
+
+      // Só salva se o usuário rolou além do cabeçalho e variou pelo menos 50px
+      if (currentY < 120) return;
+      if (Math.abs(currentY - lastSavedYRef.current) < 50) return;
+      lastSavedYRef.current = currentY;
+
+      // Identifica o parágrafo em foco na altura de leitura da tela
+      let closestIdx = 0;
+      let minDistance = Infinity;
+      const targetScreenY = window.innerHeight * 0.35;
+
+      paragraphRefs.current.forEach((el, idx) => {
+        if (!el) return;
+        const rect = el.getBoundingClientRect();
+        const dist = Math.abs(rect.top - targetScreenY);
+        if (dist < minDistance) {
+          minDistance = dist;
+          closestIdx = idx;
+        }
+      });
+
+      const rawSnippet = chapter.content?.[closestIdx] || '';
+      const cleanSnippet = rawSnippet.replace(/^[*_#\s]+/, '').slice(0, 110);
+
+      smartBookmarkService.saveBookmark({
+        bookId: book.id,
+        bookTitle: book.title,
+        chapterId: chapter.id,
+        chapterTitle: chapter.title,
+        chapterNumber: chapter.number,
+        chapterNumberText: chapterLabel,
+        scrollY: Math.round(currentY),
+        percentage: progressPercentage,
+        paragraphIndex: closestIdx,
+        textSnippet: cleanSnippet ? `${cleanSnippet}...` : undefined,
+        updatedAt: new Date().toISOString(),
+      });
+    };
+
+    let debounceTimer: any = null;
+    const onScrollDebounced = () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(handleAutoSave, 750);
+    };
+
+    window.addEventListener('scroll', onScrollDebounced, { passive: true });
+    return () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
+      window.removeEventListener('scroll', onScrollDebounced);
+    };
+  }, [
+    book.id,
+    book.title,
+    chapter.id,
+    chapter.title,
+    chapter.number,
+    chapterLabel,
+    chapter.content,
+    progressPercentage,
+  ]);
+
+  // 4.3 Função para marcar página manualmente com feedback imediato
+  const handleManualBookmark = () => {
+    const currentY = window.scrollY;
+    let closestIdx = 0;
+    let minDistance = Infinity;
+    const targetScreenY = window.innerHeight * 0.35;
+
+    paragraphRefs.current.forEach((el, idx) => {
+      if (!el) return;
+      const rect = el.getBoundingClientRect();
+      const dist = Math.abs(rect.top - targetScreenY);
+      if (dist < minDistance) {
+        minDistance = dist;
+        closestIdx = idx;
+      }
+    });
+
+    const rawSnippet = chapter.content?.[closestIdx] || '';
+    const cleanSnippet = rawSnippet.replace(/^[*_#\s]+/, '').slice(0, 110);
+
+    smartBookmarkService.saveBookmark({
+      bookId: book.id,
+      bookTitle: book.title,
+      chapterId: chapter.id,
+      chapterTitle: chapter.title,
+      chapterNumber: chapter.number,
+      chapterNumberText: chapterLabel,
+      scrollY: Math.round(currentY),
+      percentage: progressPercentage,
+      paragraphIndex: closestIdx,
+      textSnippet: cleanSnippet ? `${cleanSnippet}...` : undefined,
+      updatedAt: new Date().toISOString(),
+    });
+
+    setManualBookmarkNotice(`Marcador salvo com sucesso (${progressPercentage}% lido)`);
+    setTimeout(() => setManualBookmarkNotice(null), 3000);
+  };
+
+  // 5. DESTAQUES DE TEXTO (REFERÊNCIAS BÍBLICAS + PESQUISA)
   const renderHighlightedContent = (text: string, pIndex: number) => {
     // 4.1 Se pesquisa ativa, destaca o termo buscado
     if (isSearchEnabled && searchQuery.trim().length > 0) {
@@ -426,15 +599,34 @@ export const ChapterReader: React.FC<ChapterReaderProps> = ({
       )}
 
       {/* ÁREA CENTRAL DE LEITURA */}
-      <main className="flex-1 w-full max-w-3xl mx-auto px-5 sm:px-8 md:px-12 py-10 sm:py-16 md:py-20">
+      <main className="flex-1 w-full max-w-3xl mx-auto px-4 sm:px-8 md:px-12 py-8 sm:py-16 md:py-20">
         <article ref={contentRef} className="w-full">
-          {/* TÍTULO E HIERARQUIA EDITORIAL */}
-          <header className="text-center mb-12 sm:mb-16 md:mb-20">
-            <div className="font-display text-sm sm:text-base text-stone-500/90 dark:text-zinc-300 font-semibold tracking-[0.22em] uppercase mb-3">
+          {/* TÍTULO E HIERARQUIA EDITORIAL LIMPA */}
+          <header className="text-center mb-10 sm:mb-20 pt-1 sm:pt-4">
+            {/* Imagem / Banner do Cabeçalho da Obra ou do Capítulo (quando configurada) */}
+            {(chapter.headerImage || book.headerImage || book.coverImage) && (
+              <div className="mb-6 sm:mb-10 max-w-2xl mx-auto rounded-2xl sm:rounded-3xl overflow-hidden border border-stone-200/80 dark:border-zinc-800 shadow-md sm:shadow-lg bg-stone-100 dark:bg-zinc-850">
+                <img
+                  src={chapter.headerImage || book.headerImage || book.coverImage}
+                  alt={`Cabeçalho de ${chapter.title}`}
+                  className="w-full h-auto max-h-60 sm:max-h-80 md:max-h-96 object-cover object-center"
+                  loading="eager"
+                />
+              </div>
+            )}
+
+            {/* Nome da Obra / Categoria */}
+            <div className="font-sans text-[11px] sm:text-xs font-semibold tracking-[0.24em] uppercase text-stone-400 dark:text-zinc-400 mb-3 select-none">
+              {book.title}
+            </div>
+
+            {/* Identificação do Capítulo */}
+            <div className="font-serif italic text-sm sm:text-base text-stone-600 dark:text-zinc-300 mb-2">
               {chapterLabel}
             </div>
 
-            <h1 className="font-display text-3xl sm:text-4xl md:text-5xl font-bold tracking-tight text-balance leading-tight text-stone-900 dark:text-zinc-50">
+            {/* Título Principal em Destaque */}
+            <h1 className="font-serif text-3xl sm:text-4xl md:text-5xl font-bold tracking-tight text-balance leading-tight text-stone-900 dark:text-zinc-50 max-w-2xl mx-auto">
               {chapter.title}
             </h1>
 
@@ -460,10 +652,11 @@ export const ChapterReader: React.FC<ChapterReaderProps> = ({
               </div>
             )}
 
-            <div className="flex items-center justify-center gap-3 mt-8 select-none text-stone-400 dark:text-zinc-500 opacity-60">
-              <span className="w-8 h-px bg-current" />
-              <span className="text-xs font-serif">✦</span>
-              <span className="w-8 h-px bg-current" />
+            {/* Divisor editorial leve com amplo respiro */}
+            <div className="flex items-center justify-center gap-3 mt-10 sm:mt-12 select-none text-stone-300 dark:text-zinc-700 opacity-80" aria-hidden="true">
+              <span className="w-10 sm:w-16 h-px bg-current" />
+              <span className="text-[10px] font-serif tracking-widest">✦</span>
+              <span className="w-10 sm:w-16 h-px bg-current" />
             </div>
           </header>
 
@@ -666,6 +859,25 @@ export const ChapterReader: React.FC<ChapterReaderProps> = ({
             />
           )}
 
+          {/* BARRA DO MARCADOR INTELIGENTE */}
+          <div className="max-w-[65ch] mx-auto my-8 pt-4 border-t border-black/[0.06] dark:border-white/[0.08] flex flex-col sm:flex-row items-center justify-between gap-3 text-xs font-sans">
+            <div className="flex items-center gap-2 text-stone-500 dark:text-zinc-400">
+              <BookmarkCheck className="w-4 h-4 text-amber-500 shrink-0" />
+              <span>
+                {manualBookmarkNotice || 'Ponto exato e progresso salvos automaticamente neste leitor.'}
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={handleManualBookmark}
+              className="py-1.5 px-3.5 rounded-xl border border-stone-200 dark:border-zinc-700 bg-white/70 dark:bg-zinc-800/70 hover:bg-white dark:hover:bg-zinc-800 text-stone-700 dark:text-zinc-200 font-medium transition-all shadow-2xs hover:shadow-xs flex items-center gap-1.5 cursor-pointer shrink-0"
+              title="Salvar ou atualizar o marcador de página desta leitura"
+            >
+              <Bookmark className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+              <span>Marcar Esta Página</span>
+            </button>
+          </div>
+
           {/* NAVEGAÇÃO AO FINAL DO CAPÍTULO */}
           <div className="max-w-[65ch] mx-auto">
             <ReadingFooterNav
@@ -769,6 +981,53 @@ export const ChapterReader: React.FC<ChapterReaderProps> = ({
             </div>
           </div>
         </div>
+      {/* Toast flutuante de restauração do Marcador Inteligente */}
+      {restoredToast && (
+        <aside
+          aria-label="Aviso de marcador inteligente"
+          className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 max-w-sm w-[92%] bg-stone-900/95 dark:bg-zinc-800/95 text-stone-100 p-3 rounded-2xl shadow-xl border border-amber-500/40 backdrop-blur-md animate-in slide-in-from-bottom-3 duration-200 font-sans"
+        >
+          <div className="flex items-center justify-between gap-3 text-xs">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <span className="w-7 h-7 rounded-xl bg-amber-500 text-stone-950 flex items-center justify-center shrink-0 shadow-xs">
+                <BookmarkCheck className="w-4 h-4" />
+              </span>
+              <div className="min-w-0">
+                <div className="font-bold text-amber-300 flex items-center gap-1.5">
+                  <span>Leitura Retomada</span>
+                  <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-amber-400/20 text-amber-200 font-mono">
+                    {restoredToast.percentage}%
+                  </span>
+                </div>
+                <div className="text-[11px] text-stone-300 dark:text-zinc-400 truncate">
+                  Rolamos para onde você parou.
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-1.5 shrink-0">
+              <button
+                type="button"
+                onClick={() => {
+                  window.scrollTo({ top: 0, behavior: 'smooth' });
+                  setRestoredToast(null);
+                }}
+                className="px-2.5 py-1 rounded-lg bg-white/10 hover:bg-white/20 active:bg-white/30 text-[11px] font-semibold text-stone-100 transition-colors cursor-pointer"
+                title="Voltar ao início do capítulo"
+              >
+                Início
+              </button>
+              <button
+                type="button"
+                onClick={() => setRestoredToast(null)}
+                className="p-1 rounded-lg hover:bg-white/10 text-stone-400 hover:text-white transition-colors cursor-pointer"
+                aria-label="Fechar aviso"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
+        </aside>
       )}
     </div>
   );
