@@ -75,6 +75,7 @@ export const ChapterReader: React.FC<ChapterReaderProps> = ({
   const contentRef = useRef<HTMLElement>(null);
   const paragraphRefs = useRef<(HTMLParagraphElement | null)[]>([]);
   const progressPercentage = useReadingProgress(contentRef);
+  const chapterLabel = chapter.romanNumber || `Capítulo ${chapter.number}`;
 
   // Verificações de permissão de funcionalidades com fallback seguro (true)
   const isSearchEnabled = features ? features.search : true;
@@ -453,7 +454,6 @@ export const ChapterReader: React.FC<ChapterReaderProps> = ({
     xl: 'text-[22.5px] sm:text-[24.5px] leading-[1.7]',
   }[fontSize];
 
-  const chapterLabel = chapter.romanNumber || `Capítulo ${chapter.number}`;
   const hasNarrative = chapter.content && chapter.content.length > 0;
   const hasBiblicalTexts = chapter.biblicalTexts && chapter.biblicalTexts.length > 0;
   const hasReflectionQuestions = chapter.reflectionQuestions && chapter.reflectionQuestions.length > 0;
@@ -981,6 +981,8 @@ export const ChapterReader: React.FC<ChapterReaderProps> = ({
             </div>
           </div>
         </div>
+      )}
+
       {/* Toast flutuante de restauração do Marcador Inteligente */}
       {restoredToast && (
         <aside

@@ -8,6 +8,8 @@ import { AdminPanel } from './components/AdminPanel';
 import { PWAInstallButton } from './components/PWAInstallButton';
 import { OfflineIndicator } from './components/OfflineIndicator';
 import { ReaderRegistrationScreen } from './components/ReaderRegistrationScreen';
+import { ContinueReadingCard } from './components/ContinueReadingCard';
+import { smartBookmarkService, SmartBookmark } from './services/smartBookmarkService';
 import { authService } from './services/authService';
 import { adminAuthService } from './services/adminAuthService';
 import {
@@ -124,6 +126,19 @@ export default function App() {
       localStorage.setItem('bib_active_chapter_id', currentChapterId);
     }
   }, [currentBookId, currentChapterId]);
+
+  // Marcador Inteligente de Leitura ("Continuar Lendo")
+  const [latestBookmark, setLatestBookmark] = useState<SmartBookmark | null>(() => {
+    return smartBookmarkService.getLatestBookmark();
+  });
+
+  useEffect(() => {
+    setLatestBookmark(smartBookmarkService.getLatestBookmark());
+    const unsubscribe = smartBookmarkService.subscribe((bm) => {
+      setLatestBookmark(bm);
+    });
+    return unsubscribe;
+  }, []);
 
   // Navegação entre Leitor Literário e Leitor Bíblico
   const [currentView, setCurrentView] = useState<'reader' | 'bible'>('reader');
@@ -365,6 +380,32 @@ export default function App() {
     setShowLibraryModal(false);
     setCurrentView('reader');
     window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  // Retoma leitura a partir do Marcador Inteligente ("Continuar Lendo")
+  const handleResumeFromBookmark = (bm: SmartBookmark, resetToTop = false) => {
+    if (resetToTop) {
+      smartBookmarkService.clearBookmark(bm.bookId);
+      setLatestBookmark(smartBookmarkService.getLatestBookmark());
+      setCurrentBookId(bm.bookId);
+      setCurrentChapterId(bm.chapterId);
+      setShowLibraryModal(false);
+      setCurrentView('reader');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
+
+    setCurrentBookId(bm.bookId);
+    setCurrentChapterId(bm.chapterId);
+    setShowLibraryModal(false);
+    setCurrentView('reader');
+
+    // Se já estiver no mesmo capítulo, aplica rolagem suave imediata
+    if (currentBookId === bm.bookId && currentChapterId === bm.chapterId && bm.scrollY > 0) {
+      setTimeout(() => {
+        window.scrollTo({ top: bm.scrollY, behavior: 'smooth' });
+      }, 150);
+    }
   };
 
   // Avança para o próximo capítulo
@@ -678,6 +719,21 @@ export default function App() {
                   </p>
                 </div>
               </div>
+
+              {/* Card de Destaque Inteligente: Continuar Lendo */}
+              {latestBookmark && (
+                <div className="pt-1">
+                  <ContinueReadingCard
+                    bookmark={latestBookmark}
+                    onResume={handleResumeFromBookmark}
+                    onClear={() => {
+                      smartBookmarkService.clearBookmark(latestBookmark.bookId);
+                      setLatestBookmark(smartBookmarkService.getLatestBookmark());
+                    }}
+                    isDark={theme === 'dark'}
+                  />
+                </div>
+              )}
 
               {/* Lista de Livros Disponíveis */}
               <div className="space-y-3 pt-2">
