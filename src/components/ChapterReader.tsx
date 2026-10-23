@@ -26,6 +26,13 @@ import {
   Check,
   BookmarkCheck,
   Sparkles,
+  Upload,
+  ImagePlus,
+  Camera,
+  RotateCcw,
+  Link as LinkIcon,
+  Loader2,
+  Image as ImageIcon,
 } from 'lucide-react';
 import { BibleReferenceTarget } from '../types/bible';
 import { parseBibleReference } from '../services/bibleService';
@@ -51,6 +58,52 @@ interface ChapterReaderProps {
   isAdmin?: boolean;
   onNavigateToAdmin?: () => void;
   features?: LibraryFeaturesConfig;
+}
+/**
+ * Otimiza e redimensiona arquivos de imagem enviados para o capítulo,
+ * gerando um Data URL de alta fidelidade e tamanho controlado.
+ */
+function processImageFile(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const img = new window.Image();
+      img.onload = () => {
+        const maxWidth = 1600;
+        const maxHeight = 1200;
+        let { width, height } = img;
+
+        if (width > maxWidth || height > maxHeight) {
+          if (width / maxWidth > height / maxHeight) {
+            height = Math.round((height * maxWidth) / width);
+            width = maxWidth;
+          } else {
+            width = Math.round((width * maxHeight) / height);
+            height = maxHeight;
+          }
+        }
+
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          resolve(event.target?.result as string);
+          return;
+        }
+
+        ctx.drawImage(img, 0, 0, width, height);
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.88);
+        resolve(dataUrl);
+      };
+      img.onerror = () => {
+        resolve(event.target?.result as string);
+      };
+      img.src = event.target?.result as string;
+    };
+    reader.onerror = (err) => reject(err);
+    reader.readAsDataURL(file);
+  });
 }
 
 export const ChapterReader: React.FC<ChapterReaderProps> = ({
@@ -457,7 +510,89 @@ export const ChapterReader: React.FC<ChapterReaderProps> = ({
   const hasNarrative = chapter.content && chapter.content.length > 0;
   const hasBiblicalTexts = chapter.biblicalTexts && chapter.biblicalTexts.length > 0;
   const hasReflectionQuestions = chapter.reflectionQuestions && chapter.reflectionQuestions.length > 0;
-  const chapterIllustration = chapter.chapterImage || chapter.headerImage;
+
+  // 6. GESTÃO E INSERÇÃO DE IMAGEM / ILUSTRAÇÃO DO CAPÍTULO (CARREGAMENTO E SUBSTITUIÇÃO DINÂMICA)
+  const imageStorageKey = `bib_custom_image_${book.id}_${chapter.id}`;
+  const [customImage, setCustomImage] = useState<string | null>(() => {
+    if (typeof window === 'undefined') return null;
+    try {
+      return localStorage.getItem(imageStorageKey);
+    } catch {
+      return null;
+    }
+  });
+
+  const [imageNotice, setImageNotice] = useState<string | null>(null);
+  const [isUrlModalOpen, setIsUrlModalOpen] = useState(false);
+  const [urlInput, setUrlInput] = useState('');
+  const [isProcessingImage, setIsProcessingImage] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Sincroniza ao trocar de capítulo ou livro
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(`bib_custom_image_${book.id}_${chapter.id}`);
+      setCustomImage(saved);
+    } catch {
+      setCustomImage(null);
+    }
+  }, [book.id, chapter.id]);
+
+  const defaultIllustration = chapter.chapterImage || chapter.headerImage;
+  const currentIllustration = customImage || defaultIllustration;
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsProcessingImage(true);
+    try {
+      const processedDataUrl = await processImageFile(file);
+      setCustomImage(processedDataUrl);
+      try {
+        localStorage.setItem(imageStorageKey, processedDataUrl);
+      } catch (err) {
+        console.warn('Storage quota exceeded, custom image kept in active session memory', err);
+      }
+      setImageNotice('Imagem do capítulo atualizada com sucesso!');
+      setTimeout(() => setImageNotice(null), 3500);
+    } catch (err) {
+      console.error('Erro ao processar imagem:', err);
+      setImageNotice('Não foi possível carregar a imagem. Tente outro arquivo.');
+      setTimeout(() => setImageNotice(null), 3500);
+    } finally {
+      setIsProcessingImage(false);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    }
+  };
+
+  const handleApplyUrl = () => {
+    const trimmed = urlInput.trim();
+    if (!trimmed) return;
+    setCustomImage(trimmed);
+    try {
+      localStorage.setItem(imageStorageKey, trimmed);
+    } catch (err) {
+      console.warn('Could not save custom image URL to storage', err);
+    }
+    setUrlInput('');
+    setIsUrlModalOpen(false);
+    setImageNotice('Imagem do capítulo atualizada com sucesso!');
+    setTimeout(() => setImageNotice(null), 3500);
+  };
+
+  const handleResetToDefault = () => {
+    setCustomImage(null);
+    try {
+      localStorage.removeItem(imageStorageKey);
+    } catch {
+      // ignore
+    }
+    setImageNotice(defaultIllustration ? 'Imagem original restaurada.' : 'Ilustração removida.');
+    setTimeout(() => setImageNotice(null), 3500);
+  };
 
   return (
     <div className={`min-h-screen transition-colors duration-200 flex flex-col ${themeContainerStyles}`}>
@@ -605,7 +740,7 @@ export const ChapterReader: React.FC<ChapterReaderProps> = ({
           {/* TÍTULO E HIERARQUIA EDITORIAL LIMPA */}
           <header className="text-center mb-10 sm:mb-20 pt-1 sm:pt-4">
             {/* Banner superior da Obra (quando não há imagem exclusiva do capítulo após o título) */}
-            {!chapterIllustration && (book.headerImage || book.coverImage) && (
+            {!currentIllustration && (book.headerImage || book.coverImage) && (
               <div className="mb-6 sm:mb-10 max-w-2xl mx-auto rounded-2xl sm:rounded-3xl overflow-hidden border border-stone-200/80 dark:border-zinc-800 shadow-md sm:shadow-lg bg-stone-100 dark:bg-zinc-850">
                 <img
                   src={book.headerImage || book.coverImage}
@@ -637,24 +772,136 @@ export const ChapterReader: React.FC<ChapterReaderProps> = ({
               </p>
             )}
 
-            {/* Imagem / Ilustração de Destaque do Capítulo (logo após o título principal) */}
-            {chapterIllustration && (
-              <figure className="mt-8 sm:mt-10 mb-8 sm:mb-10 max-w-2xl mx-auto text-center">
-                <div className="relative rounded-2xl sm:rounded-3xl overflow-hidden border border-stone-200/90 dark:border-zinc-800 shadow-md sm:shadow-xl bg-stone-100 dark:bg-zinc-850 group">
-                  <img
-                    src={chapterIllustration}
-                    alt={chapter.imageAlt || `Ilustração do ${chapterLabel}: ${chapter.title}`}
-                    className="w-full h-auto max-h-[360px] sm:max-h-[460px] md:max-h-[520px] object-cover object-center transition-transform duration-500 hover:scale-[1.01]"
-                    loading="eager"
+            {/* CAIXA DE INSERÇÃO / EXIBIÇÃO DA ILUSTRAÇÃO DO CAPÍTULO (SEMPRE ABAIXO DO TÍTULO) */}
+            {(currentIllustration || isAdmin) && (
+              <div className="mt-8 sm:mt-10 mb-8 sm:mb-10 max-w-2xl mx-auto text-center relative">
+                {/* Input de arquivo oculto para upload de imagem (exclusivo para o administrador) */}
+                {isAdmin && (
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/png,image/jpeg,image/webp,image/jfif,image/gif"
+                    onChange={handleFileChange}
+                    className="hidden"
+                    aria-label="Selecionar imagem do capítulo"
                   />
-                  <div className="absolute inset-0 ring-1 ring-inset ring-black/5 dark:ring-white/5 pointer-events-none rounded-2xl sm:rounded-3xl" />
-                </div>
-                {chapter.imageCaption && (
-                  <figcaption className="mt-3 text-center text-xs text-stone-500 dark:text-zinc-400 font-serif italic">
-                    {chapter.imageCaption}
-                  </figcaption>
                 )}
-              </figure>
+
+                {/* Feedback toast de imagem (somente para administrador) */}
+                {isAdmin && imageNotice && (
+                  <div className="mb-3 inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-600 text-white shadow-md animate-in fade-in duration-200">
+                    <Check className="w-3.5 h-3.5" />
+                    <span>{imageNotice}</span>
+                  </div>
+                )}
+
+                {currentIllustration ? (
+                  /* CASO 1: ILUSTRAÇÃO EXISTENTE (Visível a todos; Controles de substituição exclusivos do Admin) */
+                  <figure className="relative group">
+                    <div className="relative rounded-2xl sm:rounded-3xl overflow-hidden border border-stone-200/90 dark:border-zinc-800 shadow-md sm:shadow-xl bg-stone-100 dark:bg-zinc-850">
+                      <img
+                        src={currentIllustration}
+                        alt={chapter.imageAlt || `Ilustração do ${chapterLabel}: ${chapter.title}`}
+                        className="w-full h-auto max-h-[360px] sm:max-h-[460px] md:max-h-[520px] object-cover object-center transition-transform duration-500 group-hover:scale-[1.01]"
+                        loading="eager"
+                      />
+                      <div className="absolute inset-0 ring-1 ring-inset ring-black/5 dark:ring-white/5 pointer-events-none rounded-2xl sm:rounded-3xl" />
+
+                      {/* Overlay durante processamento da imagem (somente para admin) */}
+                      {isAdmin && isProcessingImage && (
+                        <div className="absolute inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center rounded-2xl sm:rounded-3xl z-20">
+                          <Loader2 className="w-6 h-6 text-white animate-spin" />
+                          <span className="text-xs text-white ml-2 font-sans font-semibold">
+                            Otimizando imagem...
+                          </span>
+                        </div>
+                      )}
+
+                      {/* Barra Flutuante de Ação: Substituir / Alterar Imagem (EXCLUSIVA PARA O ADMINISTRADOR) */}
+                      {isAdmin && (
+                        <div className="absolute bottom-3 right-3 sm:bottom-4 sm:right-4 z-10 flex items-center gap-1.5 bg-stone-900/80 hover:bg-stone-900/95 dark:bg-zinc-900/85 dark:hover:bg-zinc-900/95 backdrop-blur-md text-white p-1.5 rounded-xl shadow-lg border border-white/10 opacity-90 hover:opacity-100 transition-all font-sans text-xs">
+                          <button
+                            type="button"
+                            onClick={() => fileInputRef.current?.click()}
+                            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white/15 hover:bg-white/25 active:bg-white/35 font-medium transition-colors cursor-pointer"
+                            title="Substituir por arquivo de imagem do seu dispositivo"
+                          >
+                            <Camera className="w-3.5 h-3.5 text-amber-300" />
+                            <span>Substituir Imagem</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => setIsUrlModalOpen(true)}
+                            className="p-1 rounded-lg hover:bg-white/15 transition-colors cursor-pointer"
+                            title="Substituir via Link / URL externa"
+                          >
+                            <LinkIcon className="w-3.5 h-3.5" />
+                          </button>
+
+                          {customImage && (
+                            <button
+                              type="button"
+                              onClick={handleResetToDefault}
+                              className="p-1 rounded-lg hover:bg-white/15 text-rose-300 hover:text-rose-200 transition-colors cursor-pointer"
+                              title={defaultIllustration ? 'Restaurar imagem original da obra' : 'Remover imagem'}
+                            >
+                              <RotateCcw className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                        </div>
+                      )}
+                    </div>
+
+                    {chapter.imageCaption && (
+                      <figcaption className="mt-3 text-center text-xs text-stone-500 dark:text-zinc-400 font-serif italic">
+                        {chapter.imageCaption}
+                      </figcaption>
+                    )}
+                  </figure>
+                ) : isAdmin ? (
+                  /* CASO 2: CAIXA DE INSERÇÃO VAZIA (EXCLUSIVA PARA O ADMINISTRADOR; NÃO VISÍVEL AOS LEITORES) */
+                  <div
+                    onClick={() => fileInputRef.current?.click()}
+                    className="rounded-2xl sm:rounded-3xl border-2 border-dashed border-stone-300 hover:border-amber-500 dark:border-zinc-700 dark:hover:border-amber-400 bg-stone-50/70 hover:bg-amber-50/40 dark:bg-zinc-850/40 dark:hover:bg-zinc-800/60 p-8 sm:p-10 text-center transition-all cursor-pointer group shadow-2xs hover:shadow-md"
+                  >
+                    <div className="w-12 h-12 rounded-2xl bg-amber-500/10 dark:bg-amber-400/10 text-amber-600 dark:text-amber-400 mx-auto flex items-center justify-center mb-3 group-hover:scale-105 transition-transform">
+                      <ImagePlus className="w-6 h-6" />
+                    </div>
+                    <h4 className="font-serif font-bold text-sm sm:text-base text-stone-800 dark:text-zinc-100">
+                      Inserir Imagem do Capítulo (Admin)
+                    </h4>
+                    <p className="text-xs text-stone-500 dark:text-zinc-400 font-sans mt-1 max-w-md mx-auto">
+                      Área administrativa: carregue uma ilustração para este capítulo ou insira uma URL.
+                    </p>
+
+                    <div className="mt-4 flex flex-wrap items-center justify-center gap-2 font-sans">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          fileInputRef.current?.click();
+                        }}
+                        className="px-3.5 py-1.5 rounded-xl bg-stone-900 hover:bg-stone-800 dark:bg-amber-500 dark:hover:bg-amber-400 text-white dark:text-zinc-950 text-xs font-semibold flex items-center gap-1.5 shadow-xs cursor-pointer transition-colors"
+                      >
+                        <Upload className="w-3.5 h-3.5" />
+                        Carregar Imagem
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setIsUrlModalOpen(true);
+                        }}
+                        className="px-3.5 py-1.5 rounded-xl border border-stone-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 hover:bg-stone-100 dark:hover:bg-zinc-700 text-stone-700 dark:text-zinc-200 text-xs font-semibold flex items-center gap-1.5 shadow-2xs cursor-pointer transition-colors"
+                      >
+                        <LinkIcon className="w-3.5 h-3.5" />
+                        Inserir Link / URL
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
+              </div>
             )}
 
             {chapter.status === 'awaiting_publication' && (
@@ -1051,6 +1298,64 @@ export const ChapterReader: React.FC<ChapterReaderProps> = ({
             </div>
           </div>
         </aside>
+      )}
+
+      {/* MODAL DE INSERÇÃO DE IMAGEM VIA LINK / URL (ADMINISTRADOR) */}
+      {isAdmin && isUrlModalOpen && (
+        <div
+          className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-150 font-sans"
+          role="dialog"
+          aria-modal="true"
+        >
+          <div className="max-w-md w-full bg-white dark:bg-zinc-900 p-6 rounded-2xl sm:rounded-3xl border border-stone-200 dark:border-zinc-800 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-stone-100 dark:border-zinc-800">
+              <div className="flex items-center gap-2">
+                <ImageIcon className="w-4 h-4 text-amber-500" />
+                <h3 className="font-serif font-bold text-sm text-stone-900 dark:text-zinc-100">
+                  Inserir Imagem por Link (URL)
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsUrlModalOpen(false)}
+                className="p-1 rounded-lg text-stone-400 hover:text-stone-700 dark:hover:text-zinc-200 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-stone-600 dark:text-zinc-400 mb-1.5">
+                Endereço da Imagem (URL ou caminho local)
+              </label>
+              <input
+                type="url"
+                value={urlInput}
+                onChange={(e) => setUrlInput(e.target.value)}
+                placeholder="https://exemplo.com/imagem.jpg ou /assets/..."
+                className="w-full px-3 py-2 rounded-xl border border-stone-300 dark:border-zinc-700 bg-stone-50 dark:bg-zinc-800 text-stone-900 dark:text-zinc-100 text-xs outline-none focus:border-amber-500"
+              />
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setIsUrlModalOpen(false)}
+                className="px-3 py-1.5 rounded-xl text-xs font-semibold text-stone-600 dark:text-zinc-400 hover:bg-stone-100 dark:hover:bg-zinc-800 cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleApplyUrl}
+                disabled={!urlInput.trim()}
+                className="px-4 py-1.5 rounded-xl text-xs font-semibold bg-stone-900 hover:bg-stone-800 dark:bg-amber-500 dark:hover:bg-amber-400 text-white dark:text-zinc-950 disabled:opacity-50 cursor-pointer shadow-xs"
+              >
+                Aplicar Imagem
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

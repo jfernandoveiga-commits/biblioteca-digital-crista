@@ -14,6 +14,10 @@ export const eAiCrenteChapter2: Chapter = {
   number: 2,
   romanNumber: 'Capítulo 2',
   title: 'Evangelho gourmet: quando a cruz vira item de decoração',
+  // Imagem/ilustração de abertura do capítulo (configurável como chapterImage ou headerImage)
+  chapterImage: '/assets/aistudio/Gemini_Generated_Image_oatezoatezoatezo__1__bdaceaad.jfif',
+  headerImage: '/assets/aistudio/Gemini_Generated_Image_oatezoatezoatezo__1__bdaceaad.jfif',
+  imageAlt: 'Ilustração editorial: Evangelho gourmet — quando a cruz vira item de decoração',
   estimatedReadingTimeMinutes: 11,
   status: 'published',
   editorialNote: 'Texto autoral integral fornecido pelo autor Pr. Fernando Veiga.',
