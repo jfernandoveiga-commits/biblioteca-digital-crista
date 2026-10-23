@@ -30,7 +30,7 @@ interface ReaderWhatsAppAssistantProps {
   isDark?: boolean;
 }
 
-type ReadyModelType = 'new_chapter' | 'feedback' | 'welcome' | 'encouragement' | 'reminder';
+type ReadyModelType = 'new_chapter' | 'feedback' | 'welcome' | 'quick_guide' | 'encouragement' | 'reminder';
 
 interface HistoryDraft {
   id: string;
@@ -225,6 +225,10 @@ export const ReaderWhatsAppAssistant: React.FC<ReaderWhatsAppAssistantProps> = (
 
       case 'welcome':
         rawTemplate = `Olá, ${firstName}! Que alegria imensa ter você conosco na nossa Biblioteca Digital! Seja muito bem-vindo(a)! 🌟\n\nSeu acesso já está liberado para ler a obra *${bookTitle}*. Minha oração sincera é que cada página seja um instrumento de paz, sabedoria e renovo espiritual para a sua vida.\n\nQualquer dúvida sobre a leitura, pode me chamar por aqui!\n\nCom carinho e oração,\n*Pr. Fernando Veiga* 🙏✨`;
+        break;
+
+      case 'quick_guide':
+        rawTemplate = `Olá, ${firstName}! 👋 Aqui é o Pr. Fernando Veiga. Passando para te mostrar como aproveitar ao máximo a nossa Biblioteca Digital de forma bem simples:\n\n📖 Continuar de Onde Parou: O app guarda automaticamente o seu progresso! Quando você retornar à estante, basta clicar no card no topo da tela para retomar exatamente do parágrafo onde parou.\n📚 Leitura Imersiva: Você pode alternar entre os capítulos liberados, apreciar as ilustrações exclusivas e ajustar a leitura para o seu conforto.\n\nQualquer dúvida ou dificuldade de acesso, é só me chamar por aqui. Boa leitura e que Deus abençoe muito o seu momento com a Palavra! 🙏✨`;
         break;
 
       case 'encouragement':
@@ -449,6 +453,7 @@ export const ReaderWhatsAppAssistant: React.FC<ReaderWhatsAppAssistantProps> = (
             { id: 'new_chapter' as ReadyModelType, label: 'Avisar sobre novo capítulo', Icon: Megaphone },
             { id: 'feedback' as ReadyModelType, label: 'Pedir feedback da leitura', Icon: MessageSquareQuote },
             { id: 'welcome' as ReadyModelType, label: 'Boas-vindas à Biblioteca', Icon: Star },
+            { id: 'quick_guide' as ReadyModelType, label: 'Guia Rápido da Biblioteca', Icon: BookmarkCheck },
             { id: 'encouragement' as ReadyModelType, label: 'Palavra de Encorajamento', Icon: Heart },
             { id: 'reminder' as ReadyModelType, label: 'Lembrete Carinhoso', Icon: Coffee },
           ].map((m) => {
