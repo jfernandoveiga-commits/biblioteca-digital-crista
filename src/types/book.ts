@@ -29,6 +29,9 @@ export interface Chapter {
   status?: EditorialStatus;
   editorialNote?: string;
   headerImage?: string; // Imagem/banner visual de abertura do capítulo
+  chapterImage?: string; // Imagem/ilustração de destaque do capítulo (logo após o título)
+  imageCaption?: string; // Legenda editorial descritiva da imagem
+  imageAlt?: string; // Texto alternativo de acessibilidade da imagem
 }
 
 export interface Book {

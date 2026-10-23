@@ -1,7 +1,7 @@
 import { Chapter } from '../types/book';
 
 /**
- * LIVRO: E AÍ, CRENTE!
+ * LIVRO: E Aí, CRENTE?
  * AUTOR: Pr. Fernando Veiga
  * CAPÍTULO 1: Crente fofoqueiro: o rádio ambulante do inferno
  *
@@ -15,6 +15,10 @@ export const eAiCrenteChapter1: Chapter = {
   number: 1,
   romanNumber: 'Capítulo 1',
   title: 'Crente fofoqueiro: o rádio ambulante do inferno',
+  // Imagem/ilustração de abertura do capítulo (configurável como chapterImage ou headerImage)
+  chapterImage: '/assets/aistudio/Gemini_Generated_Image_0283551f.jpeg',
+  headerImage: '/assets/aistudio/Gemini_Generated_Image_0283551f.jpeg',
+  imageAlt: 'Ilustração artística: Crente fofoqueiro — o rádio ambulante do inferno',
   estimatedReadingTimeMinutes: 8,
   status: 'published',
   editorialNote: 'Texto autoral integral fornecido pelo autor Pr. Fernando Veiga.',

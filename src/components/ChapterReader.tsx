@@ -457,6 +457,7 @@ export const ChapterReader: React.FC<ChapterReaderProps> = ({
   const hasNarrative = chapter.content && chapter.content.length > 0;
   const hasBiblicalTexts = chapter.biblicalTexts && chapter.biblicalTexts.length > 0;
   const hasReflectionQuestions = chapter.reflectionQuestions && chapter.reflectionQuestions.length > 0;
+  const chapterIllustration = chapter.chapterImage || chapter.headerImage;
 
   return (
     <div className={`min-h-screen transition-colors duration-200 flex flex-col ${themeContainerStyles}`}>
@@ -603,12 +604,12 @@ export const ChapterReader: React.FC<ChapterReaderProps> = ({
         <article ref={contentRef} className="w-full">
           {/* TÍTULO E HIERARQUIA EDITORIAL LIMPA */}
           <header className="text-center mb-10 sm:mb-20 pt-1 sm:pt-4">
-            {/* Imagem / Banner do Cabeçalho da Obra ou do Capítulo (quando configurada) */}
-            {(chapter.headerImage || book.headerImage || book.coverImage) && (
+            {/* Banner superior da Obra (quando não há imagem exclusiva do capítulo após o título) */}
+            {!chapterIllustration && (book.headerImage || book.coverImage) && (
               <div className="mb-6 sm:mb-10 max-w-2xl mx-auto rounded-2xl sm:rounded-3xl overflow-hidden border border-stone-200/80 dark:border-zinc-800 shadow-md sm:shadow-lg bg-stone-100 dark:bg-zinc-850">
                 <img
-                  src={chapter.headerImage || book.headerImage || book.coverImage}
-                  alt={`Cabeçalho de ${chapter.title}`}
+                  src={book.headerImage || book.coverImage}
+                  alt={`Capa de ${book.title}`}
                   className="w-full h-auto max-h-60 sm:max-h-80 md:max-h-96 object-cover object-center"
                   loading="eager"
                 />
@@ -634,6 +635,26 @@ export const ChapterReader: React.FC<ChapterReaderProps> = ({
               <p className="font-serif italic text-base sm:text-lg text-stone-600 dark:text-zinc-300 mt-4 max-w-xl mx-auto text-balance">
                 {chapter.subtitle}
               </p>
+            )}
+
+            {/* Imagem / Ilustração de Destaque do Capítulo (logo após o título principal) */}
+            {chapterIllustration && (
+              <figure className="mt-8 sm:mt-10 mb-8 sm:mb-10 max-w-2xl mx-auto text-center">
+                <div className="relative rounded-2xl sm:rounded-3xl overflow-hidden border border-stone-200/90 dark:border-zinc-800 shadow-md sm:shadow-xl bg-stone-100 dark:bg-zinc-850 group">
+                  <img
+                    src={chapterIllustration}
+                    alt={chapter.imageAlt || `Ilustração do ${chapterLabel}: ${chapter.title}`}
+                    className="w-full h-auto max-h-[360px] sm:max-h-[460px] md:max-h-[520px] object-cover object-center transition-transform duration-500 hover:scale-[1.01]"
+                    loading="eager"
+                  />
+                  <div className="absolute inset-0 ring-1 ring-inset ring-black/5 dark:ring-white/5 pointer-events-none rounded-2xl sm:rounded-3xl" />
+                </div>
+                {chapter.imageCaption && (
+                  <figcaption className="mt-3 text-center text-xs text-stone-500 dark:text-zinc-400 font-serif italic">
+                    {chapter.imageCaption}
+                  </figcaption>
+                )}
+              </figure>
             )}
 
             {chapter.status === 'awaiting_publication' && (

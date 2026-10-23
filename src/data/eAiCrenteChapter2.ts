@@ -1,7 +1,7 @@
 import { Chapter } from '../types/book';
 
 /**
- * LIVRO: E AÍ, CRENTE!
+ * LIVRO: E Aí, CRENTE?
  * AUTOR: Pr. Fernando Veiga
  * CAPÍTULO 2: Evangelho gourmet: quando a cruz vira item de decoração
  *

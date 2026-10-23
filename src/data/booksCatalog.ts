@@ -37,13 +37,13 @@ export const book1: Book = {
 };
 
 /**
- * Livro 2: E AÍ, CRENTE!
+ * Livro 2: E Aí, CRENTE?
  * Autor: Pr. Fernando Veiga
  * Capítulos publicados: Capítulo 1 e Capítulo 2 publicados integralmente
  */
 export const book2: Book = {
   id: 'e-ai-crente',
-  title: 'E AÍ, CRENTE!',
+  title: 'E Aí, CRENTE?',
   author: 'Pr. Fernando Veiga',
   genre: 'Vida Cristã, Juventude e Discipulado',
   synopsis:
