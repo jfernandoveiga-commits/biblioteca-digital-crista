@@ -79,6 +79,8 @@ const DEFAULT_CONTENT_AVAILABILITY: ContentAvailabilityConfig = {
       chapters: {
         'capitulo-1': true,
         'capitulo-2': true,
+        'capitulo-3': true,
+        'capitulo-4': false, // Novo capítulo: Bloqueado por padrão
       },
     },
   },
@@ -833,10 +835,11 @@ app.get('/api/library/check-access/:bookId/:chapterId', (req, res) => {
     return;
   }
 
-  if (bookConfig && bookConfig.chapters && bookConfig.chapters[chapterId] === false) {
+  // REGRA ESTRITA: Bloqueado por padrão. Apenas capítulos explicitamente liberados (true) são acessíveis aos leitores
+  if (!bookConfig || !bookConfig.chapters || bookConfig.chapters[chapterId] !== true) {
     res.status(403).json({
       allowed: false,
-      error: 'Este capítulo está temporariamente indisponível para leitura.',
+      error: 'Este capítulo está bloqueado ou aguardando liberação pela administração.',
     });
     return;
   }

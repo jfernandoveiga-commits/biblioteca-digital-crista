@@ -68,7 +68,7 @@ import {
   ReaderMaritalStatus,
   ReaderProfileAdminUpdateInput,
 } from '../types/book';
-import { libraryBooks } from '../data/booksCatalog';
+import { libraryBooks, DEFAULT_CONTENT_AVAILABILITY } from '../data/booksCatalog';
 import { PWAInstallButton } from './PWAInstallButton';
 import { ReaderWhatsAppAssistant } from './ReaderWhatsAppAssistant';
 import {
@@ -223,25 +223,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const [isSavingFeatures, setIsSavingFeatures] = useState<boolean>(false);
 
   // Estado da Disponibilidade de Livros e Capítulos
-  const [contentAvailability, setContentAvailability] = useState<ContentAvailabilityConfig>({
-    books: {
-      'entre-a-cruz-e-o-mundo': {
-        enabled: true,
-        chapters: {
-          'capitulo-1': true,
-          'capitulo-2': true,
-        },
-      },
-      'e-ai-crente': {
-        enabled: true,
-        chapters: {
-          'capitulo-1': true,
-          'capitulo-2': true,
-          'capitulo-3': true,
-        },
-      },
-    },
-  });
+  const [contentAvailability, setContentAvailability] = useState<ContentAvailabilityConfig>(DEFAULT_CONTENT_AVAILABILITY);
   const [expandedBookIds, setExpandedBookIds] = useState<Record<string, boolean>>({
     'entre-a-cruz-e-o-mundo': true,
     'e-ai-crente': false,
@@ -1147,7 +1129,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       chapters: {},
     };
     const currentChapters = currentBookConfig.chapters || {};
-    const currentChapterEnabled = currentChapters[chapterId] !== false; // padrão true
+    // REGRA: Bloqueado por padrão. Apenas liberado se for explicitamente true
+    const currentChapterEnabled = currentChapters[chapterId] === true;
     const newChapterEnabled = !currentChapterEnabled;
 
     const updatedConfig: ContentAvailabilityConfig = {
@@ -2756,10 +2739,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                 const isBookEnabled = bookConfig.enabled !== false;
                 const isExpanded = Boolean(expandedBookIds[book.id]);
 
-                // Contagem de capítulos ativos
+                // Contagem de capítulos ativos (apenas liberados explicitamente como true)
                 const enabledChaptersCount = book.chapters.filter((ch) => {
-                  const chVal = bookConfig.chapters?.[ch.id];
-                  return chVal !== false;
+                  return bookConfig.chapters?.[ch.id] === true;
                 }).length;
 
                 return (
@@ -2908,8 +2890,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                             </div>
                           ) : (
                             book.chapters.map((chapter) => {
+                              // REGRA: Bloqueado por padrão. Apenas liberado se for explicitamente true
                               const isChapterEnabled =
-                                bookConfig.chapters?.[chapter.id] !== false;
+                                bookConfig.chapters?.[chapter.id] === true;
 
                               return (
                                 <div

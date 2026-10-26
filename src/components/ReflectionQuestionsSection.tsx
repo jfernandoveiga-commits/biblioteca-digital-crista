@@ -243,13 +243,10 @@ export const ReflectionQuestionsSection: React.FC<ReflectionQuestionsSectionProp
                 isExpanded ? cardExpandedBg : ''
               }`}
             >
-              {/* Botão de Toque (Área de Toque >= 44px para Mobile) */}
-              <button
-                type="button"
+              {/* Cabeçalho Interativo do Card (Área de Toque ampla para Mobile) */}
+              <div
                 onClick={() => toggleExpand(qIdx)}
-                className="w-full text-left p-4 sm:p-5 flex items-start gap-3.5 sm:gap-4 transition-colors cursor-pointer select-none focus-visible:outline-2 focus-visible:outline-amber-400"
-                aria-expanded={isExpanded}
-                aria-controls={`reflection-answer-${qIdx}`}
+                className="w-full text-left p-4 sm:p-5 flex items-start gap-3.5 sm:gap-4 transition-colors cursor-pointer select-none"
               >
                 {/* Número da Pergunta */}
                 <span
@@ -274,15 +271,25 @@ export const ReflectionQuestionsSection: React.FC<ReflectionQuestionsSectionProp
                   )}
                 </div>
 
-                {/* Ícone de Expansão/Recolhimento */}
-                <div className="shrink-0 pt-1 text-stone-400 hover:text-stone-600 dark:text-zinc-400 dark:hover:text-zinc-200 transition-colors">
+                {/* Botão de Alternar Expansão/Recolhimento */}
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    toggleExpand(qIdx);
+                  }}
+                  className="shrink-0 p-1 text-stone-400 hover:text-stone-700 dark:text-zinc-400 dark:hover:text-zinc-200 transition-colors cursor-pointer rounded-lg focus-visible:outline-2 focus-visible:outline-amber-400"
+                  aria-expanded={isExpanded}
+                  aria-controls={`reflection-answer-${qIdx}`}
+                  aria-label={isExpanded ? `Recolher pergunta ${qIdx + 1}` : `Expandir pergunta ${qIdx + 1}`}
+                >
                   {isExpanded ? (
                     <ChevronUp className="w-5 h-5" />
                   ) : (
                     <ChevronDown className="w-5 h-5" />
                   )}
-                </div>
-              </button>
+                </button>
+              </div>
 
               {/* Área Expandida com Campo de Resposta Pessoal */}
               {isExpanded && (

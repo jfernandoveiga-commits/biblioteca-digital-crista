@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { libraryBooks } from './data/booksCatalog';
+import { libraryBooks, DEFAULT_CONTENT_AVAILABILITY, isChapterAvailableToReaders } from './data/booksCatalog';
 import { ChapterReader } from './components/ChapterReader';
 import { BibleReader } from './components/BibleReader';
 import { BiblePassageModal } from './components/BiblePassageModal';
@@ -83,25 +83,7 @@ export default function App() {
 
   // Funcionalidades e Disponibilidade gerenciadas pelo Administrador
   const [features, setFeatures] = useState<LibraryFeaturesConfig>(DEFAULT_LIBRARY_FEATURES);
-  const [contentAvailability, setContentAvailability] = useState<ContentAvailabilityConfig>({
-    books: {
-      'entre-a-cruz-e-o-mundo': {
-        enabled: true,
-        chapters: {
-          'capitulo-1': true,
-          'capitulo-2': true,
-        },
-      },
-      'e-ai-crente': {
-        enabled: true,
-        chapters: {
-          'capitulo-1': true,
-          'capitulo-2': true,
-          'capitulo-3': true,
-        },
-      },
-    },
-  });
+  const [contentAvailability, setContentAvailability] = useState<ContentAvailabilityConfig>(DEFAULT_CONTENT_AVAILABILITY);
 
   // Livro e Capítulo Ativos na Leitura (persistidos para restaurar após recarregar a página ou reiniciar)
   const [currentBookId, setCurrentBookId] = useState<string>(() => {
@@ -367,12 +349,17 @@ export default function App() {
 
   const currentChapterIndex = currentBook.chapters.findIndex((c) => c.id === currentChapter.id);
   const hasPreviousChapter = currentChapterIndex > 0;
-  const hasNextChapter = currentChapterIndex >= 0 && currentChapterIndex < currentBook.chapters.length - 1;
+  const nextChapter = currentBook.chapters[currentChapterIndex + 1];
+  const isNextChapterEnabled = nextChapter
+    ? isAdminSession || isChapterAvailableToReaders(contentAvailability, currentBook.id, nextChapter.id)
+    : false;
+  const hasNextChapter = Boolean(nextChapter && isNextChapterEnabled);
 
   // Verificação de disponibilidade editorial do livro e capítulo selecionados (se for administrador ativo, acesso total irrestrito)
+  // REGRA: Novos capítulos são Bloqueados por padrão. Somente capítulos explicitamente liberados (true) ficam ativos para leitores.
   const bookConfig = contentAvailability.books[currentBook.id] || { enabled: true, chapters: {} };
   const isCurrentBookEnabled = isAdminSession || bookConfig.enabled !== false;
-  const isCurrentChapterEnabled = isAdminSession || (isCurrentBookEnabled && bookConfig.chapters?.[currentChapter.id] !== false);
+  const isCurrentChapterEnabled = isAdminSession || (isCurrentBookEnabled && isChapterAvailableToReaders(contentAvailability, currentBook.id, currentChapter.id));
 
   // Seleciona um livro e capítulo para ler
   const handleSelectChapter = (bookId: string, chapterId: string) => {
@@ -790,7 +777,7 @@ export default function App() {
                           </div>
                         ) : (
                           b.chapters.map((ch) => {
-                            const isChEnabled = isAdminSession || (bCfg.enabled !== false && bCfg.chapters?.[ch.id] !== false);
+                            const isChEnabled = isAdminSession || isChapterAvailableToReaders(contentAvailability, b.id, ch.id);
                             const isCurrent = currentBookId === b.id && currentChapterId === ch.id;
 
                             return (
