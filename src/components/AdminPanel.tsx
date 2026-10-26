@@ -237,6 +237,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         chapters: {
           'capitulo-1': true,
           'capitulo-2': true,
+          'capitulo-3': true,
         },
       },
     },

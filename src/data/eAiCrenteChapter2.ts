@@ -15,8 +15,8 @@ export const eAiCrenteChapter2: Chapter = {
   romanNumber: 'Capítulo 2',
   title: 'Evangelho gourmet: quando a cruz vira item de decoração',
   // Imagem/ilustração de abertura do capítulo (configurável como chapterImage ou headerImage)
-  chapterImage: '/assets/aistudio/Gemini_Generated_Image_oatezoatezoatezo__1__bdaceaad.jfif',
-  headerImage: '/assets/aistudio/Gemini_Generated_Image_oatezoatezoatezo__1__bdaceaad.jfif',
+  chapterImage: '/assets/aistudio/e_ai_crente_capitulo_2_16x9.jpg',
+  headerImage: '/assets/aistudio/e_ai_crente_capitulo_2_16x9.jpg',
   imageAlt: 'Ilustração editorial: Evangelho gourmet — quando a cruz vira item de decoração',
   estimatedReadingTimeMinutes: 11,
   status: 'published',

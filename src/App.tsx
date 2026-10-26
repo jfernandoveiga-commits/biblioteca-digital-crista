@@ -97,6 +97,7 @@ export default function App() {
         chapters: {
           'capitulo-1': true,
           'capitulo-2': true,
+          'capitulo-3': true,
         },
       },
     },

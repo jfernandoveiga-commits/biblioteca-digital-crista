@@ -3,8 +3,9 @@ import { chapter1 } from './sampleChapter';
 import { chapter2 } from './chapter2';
 import { eAiCrenteChapter1 } from './eAiCrenteChapter1';
 import { eAiCrenteChapter2 } from './eAiCrenteChapter2';
+import { eAiCrenteChapter3 } from './eAiCrenteChapter3';
 
-export { chapter2, eAiCrenteChapter1, eAiCrenteChapter2 };
+export { chapter2, eAiCrenteChapter1, eAiCrenteChapter2, eAiCrenteChapter3 };
 
 /**
  * Catálogo Oficial da Biblioteca Digital.
@@ -48,11 +49,11 @@ export const book2: Book = {
   genre: 'Vida Cristã, Juventude e Discipulado',
   synopsis:
     'Reflexões, exortações e ensinamentos práticos do Pr. Fernando Veiga para a juventude cristã, abordando fé autêntica, santidade e vida no cotidiano.',
-  totalChapters: 2,
+  totalChapters: 3,
   status: 'published',
   editorialNote:
-    'Obra autoral do Pr. Fernando Veiga. Capítulos 1 e 2 publicados integralmente conforme texto original fornecido pelo autor.',
-  chapters: [eAiCrenteChapter1, eAiCrenteChapter2],
+    'Obra autoral do Pr. Fernando Veiga. Capítulos 1, 2 e 3 publicados integralmente conforme texto original fornecido pelo autor.',
+  chapters: [eAiCrenteChapter1, eAiCrenteChapter2, eAiCrenteChapter3],
 };
 
 /**
