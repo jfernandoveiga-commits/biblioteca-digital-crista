@@ -532,13 +532,29 @@ export const ChapterReader: React.FC<ChapterReaderProps> = ({
   useEffect(() => {
     try {
       const saved = localStorage.getItem(`bib_custom_image_${book.id}_${chapter.id}`);
-      setCustomImage(saved);
+      if (saved) {
+        setCustomImage(saved);
+      } else {
+        setCustomImage(null);
+      }
     } catch {
       setCustomImage(null);
     }
+
+    // Consulta imagem configurada pelo administrador no servidor (se houver)
+    fetch('/api/library/config')
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        const key = `${book.id}:${chapter.id}`;
+        if (data?.chapterHeaderImages?.[key]) {
+          setCustomImage(data.chapterHeaderImages[key]);
+        }
+      })
+      .catch(() => {});
   }, [book.id, chapter.id]);
 
-  const defaultIllustration = chapter.chapterImage || chapter.headerImage;
+  // Prioriza headerImage e utiliza chapterImage como fallback
+  const defaultIllustration = chapter.headerImage || chapter.chapterImage;
   const currentIllustration = customImage || defaultIllustration;
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -554,6 +570,28 @@ export const ChapterReader: React.FC<ChapterReaderProps> = ({
       } catch (err) {
         console.warn('Storage quota exceeded, custom image kept in active session memory', err);
       }
+
+      // Sincroniza com o servidor se o administrador estiver autenticado
+      if (isAdmin) {
+        try {
+          const token = sessionStorage.getItem('bib_admin_token') || '';
+          await fetch('/api/admin/chapter-image', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({
+              bookId: book.id,
+              chapterId: chapter.id,
+              headerImage: processedDataUrl,
+            }),
+          });
+        } catch (err) {
+          console.warn('Não foi possível sincronizar imagem no servidor:', err);
+        }
+      }
+
       setImageNotice('Imagem do capítulo atualizada com sucesso!');
       setTimeout(() => setImageNotice(null), 3500);
     } catch (err) {
@@ -568,7 +606,7 @@ export const ChapterReader: React.FC<ChapterReaderProps> = ({
     }
   };
 
-  const handleApplyUrl = () => {
+  const handleApplyUrl = async () => {
     const trimmed = urlInput.trim();
     if (!trimmed) return;
     setCustomImage(trimmed);
@@ -577,19 +615,62 @@ export const ChapterReader: React.FC<ChapterReaderProps> = ({
     } catch (err) {
       console.warn('Could not save custom image URL to storage', err);
     }
+
+    // Salva no servidor para que todos os leitores recebam a alteração
+    if (isAdmin) {
+      try {
+        const token = sessionStorage.getItem('bib_admin_token') || '';
+        await fetch('/api/admin/chapter-image', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            bookId: book.id,
+            chapterId: chapter.id,
+            headerImage: trimmed,
+          }),
+        });
+      } catch (err) {
+        console.warn('Não foi possível salvar imagem personalizada no servidor:', err);
+      }
+    }
+
     setUrlInput('');
     setIsUrlModalOpen(false);
-    setImageNotice('Imagem do capítulo atualizada com sucesso!');
+    setImageNotice('Link da imagem atualizado com sucesso para todos os leitores!');
     setTimeout(() => setImageNotice(null), 3500);
   };
 
-  const handleResetToDefault = () => {
+  const handleResetToDefault = async () => {
     setCustomImage(null);
     try {
       localStorage.removeItem(imageStorageKey);
     } catch {
       // ignore
     }
+
+    if (isAdmin) {
+      try {
+        const token = sessionStorage.getItem('bib_admin_token') || '';
+        await fetch('/api/admin/chapter-image', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            bookId: book.id,
+            chapterId: chapter.id,
+            headerImage: null,
+          }),
+        });
+      } catch (err) {
+        console.warn('Não foi possível resetar imagem no servidor:', err);
+      }
+    }
+
     setImageNotice(defaultIllustration ? 'Imagem original restaurada.' : 'Ilustração removida.');
     setTimeout(() => setImageNotice(null), 3500);
   };
@@ -832,7 +913,10 @@ export const ChapterReader: React.FC<ChapterReaderProps> = ({
 
                           <button
                             type="button"
-                            onClick={() => setIsUrlModalOpen(true)}
+                            onClick={() => {
+                              setUrlInput(currentIllustration || '');
+                              setIsUrlModalOpen(true);
+                            }}
                             className="p-1 rounded-lg hover:bg-white/15 transition-colors cursor-pointer"
                             title="Substituir via Link / URL externa"
                           >

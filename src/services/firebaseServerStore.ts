@@ -50,6 +50,7 @@ export interface FirestoreSystemConfigDoc {
   sessionsRevokedBefore: number;
   features: LibraryFeaturesConfig;
   contentAvailability: ContentAvailabilityConfig;
+  chapterHeaderImages?: Record<string, string>;
   updatedAt: string;
   adminUsername?: string;
   adminPasswordHash?: string;
@@ -235,9 +236,13 @@ class FirebaseServerStore {
     return {
       id: String(id || data.id),
       name: String(data.name || '').trim(),
+      email: typeof data.email === 'string' ? data.email.trim() : (data.profile?.email || ''),
       pinHash: String(data.pinHash || ''),
       pinSalt: String(data.pinSalt || ''),
       status: (data.status as any) || 'active',
+      isApproved: data.isApproved === false ? false : true,
+      selfRegistered: Boolean(data.selfRegistered),
+      approvedAt: data.approvedAt || null,
       createdAt: data.createdAt || new Date().toISOString(),
       expiresAt: data.expiresAt || null,
       lastUsedAt: data.lastUsedAt || null,
@@ -309,9 +314,13 @@ class FirebaseServerStore {
     const payload: Record<string, any> = {
       id: String(reader.id),
       name: String(reader.name || '').trim(),
+      email: typeof reader.email === 'string' ? reader.email.trim() : (reader.profile?.email || ''),
       pinHash: String(reader.pinHash || ''),
       pinSalt: String(reader.pinSalt || ''),
       status: reader.status || 'active',
+      isApproved: reader.isApproved === false ? false : true,
+      selfRegistered: Boolean(reader.selfRegistered),
+      approvedAt: reader.approvedAt || null,
       createdAt: reader.createdAt || new Date().toISOString(),
       expiresAt: reader.expiresAt || null,
       lastUsedAt: reader.lastUsedAt || null,

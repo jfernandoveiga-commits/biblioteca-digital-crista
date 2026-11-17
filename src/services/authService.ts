@@ -11,8 +11,9 @@ import {
   DEFAULT_LIBRARY_FEATURES,
   ReaderProfile,
   ReaderProfileUpdateInput,
+  SelfRegistrationInput,
 } from '../types/book';
-import { standardizePin } from '../utils/textFormatters';
+import { normalizeAccessCredential } from '../utils/textFormatters';
 import { adminAuthService } from './adminAuthService';
 
 const SESSION_TOKEN_KEY = 'bib_session_token';
@@ -27,6 +28,7 @@ export interface VerifyPinResult {
   token?: string;
   expiresAt?: number;
   isLocked?: boolean;
+  isPendingApproval?: boolean;
   isAccessBlocked?: boolean;
   isAccessRevoked?: boolean;
   isAccessExpired?: boolean;
@@ -133,14 +135,14 @@ export const authService = {
    */
   async verifyPin(pin: unknown): Promise<VerifyPinResult> {
     try {
-      const sanitizedPin = standardizePin(pin);
+      const sanitizedCredential = normalizeAccessCredential(pin);
 
-      if (!sanitizedPin) {
+      if (!sanitizedCredential) {
         return {
           success: false,
           code: 'empty_pin',
-          error: 'Por favor, digite o PIN para entrar.',
-          diagnostic: 'Nenhum caractere válido foi informado no campo de PIN.',
+          error: 'Por favor, digite seu PIN ou senha para entrar.',
+          diagnostic: 'Nenhum caractere válido foi informado.',
         };
       }
 
@@ -149,7 +151,7 @@ export const authService = {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ pin: sanitizedPin }),
+        body: JSON.stringify({ pin: sanitizedCredential }),
         credentials: 'include',
       });
 
@@ -171,23 +173,71 @@ export const authService = {
 
       return {
         success: false,
-        error: data.error || 'PIN incorreto. Tente novamente.',
+        error: data.error || 'PIN ou senha incorretos. Tente novamente.',
         code: data.code,
         diagnostic: data.diagnostic,
         remainingAttempts: data.remainingAttempts,
         retryAfter: data.retryAfter,
         isLocked: data.isLocked,
+        isPendingApproval: data.isPendingApproval,
         isAccessBlocked: data.isAccessBlocked,
         isAccessRevoked: data.isAccessRevoked,
         isAccessExpired: data.isAccessExpired,
       };
     } catch (err) {
-      console.error('[authService] Erro de rede ao validar PIN:', err);
+      console.error('[authService] Erro de rede ao validar credencial:', err);
       return {
         success: false,
         code: 'network_error',
         error: 'Erro de conexão com o servidor. Verifique sua rede e tente novamente.',
         diagnostic: 'Não foi possível estabelecer contato com a API de autenticação.',
+      };
+    }
+  },
+
+  /**
+   * Auto-cadastro público de novo leitor com senha pessoal (salvo como Pendente / Bloqueado até aprovação)
+   */
+  async registerSelfReader(
+    input: SelfRegistrationInput
+  ): Promise<{
+    success: boolean;
+    isApproved?: boolean;
+    readerName?: string;
+    message?: string;
+    error?: string;
+  }> {
+    try {
+      const response = await fetch('/api/auth/register', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(input),
+        credentials: 'include',
+      });
+
+      const data = await response.json();
+      if (response.ok && data.success) {
+        return {
+          success: true,
+          isApproved: Boolean(data.isApproved),
+          readerName: data.readerName,
+          message:
+            data.message ||
+            'Cadastro realizado com sucesso! Seu acesso será liberado em breve pela administração.',
+        };
+      }
+
+      return {
+        success: false,
+        error: data.error || 'Não foi possível concluir seu cadastro. Verifique os dados informados.',
+      };
+    } catch (err) {
+      console.error('[authService] Erro de rede ao realizar auto-cadastro:', err);
+      return {
+        success: false,
+        error: 'Erro de conexão com o servidor ao enviar seu cadastro. Tente novamente.',
       };
     }
   },

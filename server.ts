@@ -92,6 +92,8 @@ import {
   validateBrazilianMobilePhone,
   calculateDetailedAge,
   standardizePin,
+  normalizeAccessCredential,
+  validateEmail,
 } from './src/utils/textFormatters';
 
 import {
@@ -127,6 +129,7 @@ interface SecurityConfig {
   sessionsRevokedBefore: number;
   features: LibraryFeaturesConfig;
   contentAvailability: ContentAvailabilityConfig;
+  chapterHeaderImages?: Record<string, string>;
   readerAccesses: ReaderAccessRecord[];
 }
 
@@ -136,25 +139,32 @@ function hashPin(pin: unknown, salt: string): string {
   return crypto.pbkdf2Sync(clean, salt, 10000, 32, 'sha256').toString('hex');
 }
 
+function hashAccessPassword(password: unknown, salt: string): string {
+  const clean = normalizeAccessCredential(password);
+  return crypto.pbkdf2Sync(clean, salt, 10000, 32, 'sha256').toString('hex');
+}
+
 function verifyPinHash(candidatePin: unknown, storedHash: string, salt: string): boolean {
   if (!candidatePin || !storedHash || !salt) return false;
   try {
-    const cleanCandidate = standardizePin(candidatePin);
-    if (!cleanCandidate) return false;
-
-    const candidateHash = hashPin(cleanCandidate, salt);
-    const bufCandidate = Buffer.from(candidateHash, 'hex');
     const bufStored = Buffer.from(storedHash, 'hex');
-    if (bufCandidate.length === bufStored.length && crypto.timingSafeEqual(bufCandidate, bufStored)) {
-      return true;
+
+    // 1. Verifica credencial normalizada (preserva letras, hífens e símbolos para senhas pessoais)
+    const cleanPassword = normalizeAccessCredential(candidatePin);
+    if (cleanPassword) {
+      const passHash = crypto.pbkdf2Sync(cleanPassword, salt, 10000, 32, 'sha256').toString('hex');
+      const bufPass = Buffer.from(passHash, 'hex');
+      if (bufPass.length === bufStored.length && crypto.timingSafeEqual(bufPass, bufStored)) {
+        return true;
+      }
     }
 
-    // Fallback de retrocompatibilidade para hashes legados criados com espaços ou pontuações
-    const rawCandidate = String(candidatePin).trim();
-    if (rawCandidate && rawCandidate !== cleanCandidate) {
-      const rawHash = crypto.pbkdf2Sync(rawCandidate, salt, 10000, 32, 'sha256').toString('hex');
-      const bufRaw = Buffer.from(rawHash, 'hex');
-      if (bufRaw.length === bufStored.length && crypto.timingSafeEqual(bufRaw, bufStored)) {
+    // 2. Verifica PIN padronizado (remove espaços e hífens decorativos para PINs numéricos)
+    const cleanCandidate = standardizePin(candidatePin);
+    if (cleanCandidate && cleanCandidate !== cleanPassword) {
+      const candidateHash = hashPin(cleanCandidate, salt);
+      const bufCandidate = Buffer.from(candidateHash, 'hex');
+      if (bufCandidate.length === bufStored.length && crypto.timingSafeEqual(bufCandidate, bufStored)) {
         return true;
       }
     }
@@ -239,6 +249,7 @@ function loadOrCreateSecurityConfig(): SecurityConfig {
           sessionsRevokedBefore: Number(parsed.sessionsRevokedBefore) || 0,
           features,
           contentAvailability,
+          chapterHeaderImages: parsed.chapterHeaderImages || {},
           readerAccesses,
         };
 
@@ -271,6 +282,7 @@ function loadOrCreateSecurityConfig(): SecurityConfig {
     sessionsRevokedBefore: 0,
     features: DEFAULT_FEATURES,
     contentAvailability: DEFAULT_CONTENT_AVAILABILITY,
+    chapterHeaderImages: {},
     readerAccesses: [
       {
         id: 'access-initial-default',
@@ -383,6 +395,12 @@ async function syncWithFirestore(): Promise<void> {
             ...cleanedCloudBooks,
           },
         };
+        if (cloudConfig.chapterHeaderImages) {
+          securityConfig.chapterHeaderImages = {
+            ...(securityConfig.chapterHeaderImages || {}),
+            ...cloudConfig.chapterHeaderImages,
+          };
+        }
       }
       saveSecurityConfig(securityConfig);
       console.log(`[Firebase] Sincronização concluída com sucesso! (${securityConfig.readerAccesses.length} acessos prontos).`);
@@ -400,6 +418,7 @@ async function syncWithFirestore(): Promise<void> {
           sessionsRevokedBefore: securityConfig.sessionsRevokedBefore,
           features: securityConfig.features,
           contentAvailability: securityConfig.contentAvailability,
+          chapterHeaderImages: securityConfig.chapterHeaderImages || {},
           updatedAt: new Date().toISOString(),
         }
       );
@@ -421,6 +440,7 @@ async function syncSystemConfigToFirestore(): Promise<void> {
       sessionsRevokedBefore: securityConfig.sessionsRevokedBefore,
       features: securityConfig.features,
       contentAvailability: securityConfig.contentAvailability,
+      chapterHeaderImages: securityConfig.chapterHeaderImages || {},
       updatedAt: new Date().toISOString(),
       adminUsername: securityConfig.adminUsername,
       adminPasswordHash: securityConfig.adminPasswordHash,
@@ -570,6 +590,14 @@ function isReaderProfileComplete(reader?: ReaderAccessRecord | null): boolean {
   if (!reader.hasProfile || !reader.profile) return false;
   const p = reader.profile;
   const hasValidName = typeof p.fullName === 'string' && p.fullName.trim().length >= 3 && p.fullName.trim().includes(' ');
+  // Leitores que realizaram auto-cadastro já preencheram nome e contato (e-mail ou WhatsApp)
+  if (reader.selfRegistered && hasValidName) {
+    const hasEmail = typeof (p.email || reader.email) === 'string' && String(p.email || reader.email).trim().includes('@');
+    const hasPhone = typeof p.phone === 'string' && p.phone.replace(/\D/g, '').length >= 10;
+    if (hasEmail || hasPhone) {
+      return true;
+    }
+  }
   const hasValidPhone = typeof p.phone === 'string' && p.phone.replace(/\D/g, '').length >= 10;
   const hasValidBirth = typeof p.birthDate === 'string' && p.birthDate.trim().length >= 8;
   return Boolean(hasValidName && hasValidPhone && hasValidBirth);
@@ -708,15 +736,19 @@ app.get('/api/auth/session', (req, res) => {
     return;
   }
 
-  // Verifica se o acesso do leitor ainda existe e está ativo
+  // Verifica se o acesso do leitor ainda existe, foi aprovado e está ativo
   let matchedAccess: ReaderAccessRecord | undefined;
   if (session.accessId) {
     matchedAccess = (securityConfig.readerAccesses || []).find((a) => a.id === session.accessId);
-    if (!matchedAccess || matchedAccess.status !== 'active') {
+    if (!matchedAccess || matchedAccess.status !== 'active' || matchedAccess.isApproved === false) {
       activeReaderSessions.delete(token);
       res.json({
         authenticated: false,
-        reason: matchedAccess ? matchedAccess.status : 'access_not_found',
+        reason: matchedAccess?.isApproved === false
+          ? 'pending_approval'
+          : matchedAccess
+          ? matchedAccess.status
+          : 'access_not_found',
         features: securityConfig.features,
         contentAvailability: securityConfig.contentAvailability,
       });
@@ -790,6 +822,7 @@ app.get('/api/library/config', (_req, res) => {
     success: true,
     features: securityConfig.features,
     contentAvailability: securityConfig.contentAvailability,
+    chapterHeaderImages: securityConfig.chapterHeaderImages || {},
     isLibraryLocked: securityConfig.isLibraryLocked,
     lockReason: securityConfig.lockReason,
   });
@@ -934,14 +967,14 @@ app.post('/api/auth/verify-pin', async (req, res) => {
   }
 
   const { pin } = req.body || {};
-  const cleanPin = standardizePin(pin);
+  const cleanCredential = normalizeAccessCredential(pin);
 
-  if (!cleanPin) {
+  if (!cleanCredential) {
     res.status(400).json({
       success: false,
       code: 'empty_pin',
-      error: 'Por favor, informe o PIN de acesso (apenas os dígitos ou caracteres fornecidos).',
-      diagnostic: 'Nenhum caractere válido recebido após higienização e remoção de espaços.',
+      error: 'Por favor, informe seu PIN ou senha pessoal de acesso.',
+      diagnostic: 'Nenhum caractere válido recebido após higienização.',
     });
     return;
   }
@@ -951,7 +984,7 @@ app.post('/api/auth/verify-pin', async (req, res) => {
   const accesses = securityConfig.readerAccesses || [];
 
   for (const acc of accesses) {
-    if (acc.pinHash && acc.pinSalt && verifyPinHash(cleanPin, acc.pinHash, acc.pinSalt)) {
+    if (acc.pinHash && acc.pinSalt && verifyPinHash(cleanCredential, acc.pinHash, acc.pinSalt)) {
       matchedAccess = acc;
       break;
     }
@@ -978,26 +1011,27 @@ app.post('/api/auth/verify-pin', async (req, res) => {
 
         // Reavalia com os registros atualizados do Firestore
         for (const acc of securityConfig.readerAccesses) {
-          if (acc.pinHash && acc.pinSalt && verifyPinHash(cleanPin, acc.pinHash, acc.pinSalt)) {
+          if (acc.pinHash && acc.pinSalt && verifyPinHash(cleanCredential, acc.pinHash, acc.pinSalt)) {
             matchedAccess = acc;
             break;
           }
         }
       }
     } catch (err: any) {
-      console.warn('[Firebase] Aviso na consulta ao Firestore durante verificação de PIN:', err?.message || err);
+      console.warn('[Firebase] Aviso na consulta ao Firestore durante verificação de credencial:', err?.message || err);
     }
   }
 
   // 3. Fallback: verifica contra o PIN mestre do sistema se configurado
   if (!matchedAccess && securityConfig.pinHash && securityConfig.pinSalt) {
-    if (verifyPinHash(cleanPin, securityConfig.pinHash, securityConfig.pinSalt)) {
+    if (verifyPinHash(cleanCredential, securityConfig.pinHash, securityConfig.pinSalt)) {
       matchedAccess = {
         id: 'access-general',
         name: 'Acesso Geral da Biblioteca',
         pinHash: securityConfig.pinHash,
         pinSalt: securityConfig.pinSalt,
         status: 'active',
+        isApproved: true,
         createdAt: securityConfig.lastPinChangedAt || new Date().toISOString(),
         expiresAt: null,
         lastUsedAt: null,
@@ -1006,7 +1040,7 @@ app.post('/api/auth/verify-pin', async (req, res) => {
     }
   }
 
-  // Se nenhum PIN conferiu: conta falha no rate limiter
+  // Se nenhuma credencial conferiu: conta falha no rate limiter
   if (!matchedAccess) {
     entry.attempts += 1;
     entry.lastAttempt = now;
@@ -1031,14 +1065,27 @@ app.post('/api/auth/verify-pin', async (req, res) => {
     res.status(401).json({
       success: false,
       code: 'invalid_pin',
-      error: 'PIN incorreto. Verifique os dígitos fornecidos pelo administrador (sem espaços) e tente novamente.',
+      error: 'PIN ou senha incorretos. Verifique os dados informados e tente novamente.',
       remainingAttempts: attemptsLeft,
-      diagnostic: 'O código informado não confere com nenhum leitor ativo registrado no sistema.',
+      diagnostic: 'A credencial informada não confere com nenhum leitor ativo registrado no sistema.',
     });
     return;
   }
 
-  // Se o PIN confere, mas o acesso está BLOQUEADO
+  // Se o leitor se auto-cadastrou e ainda está AGUARDANDO APROVAÇÃO da administração (isApproved === false)
+  if (matchedAccess.isApproved === false) {
+    res.status(403).json({
+      success: false,
+      isPendingApproval: true,
+      isAccessBlocked: true,
+      code: 'pending_approval',
+      error: `Olá, ${matchedAccess.name}! Seu cadastro foi recebido e está aguardando liberação pela administração. Assim que for aprovado, você poderá acessar com sua senha.`,
+      diagnostic: 'Cadastro pendente de aprovação administrativa (isApproved: false).',
+    });
+    return;
+  }
+
+  // Se a credencial confere, mas o acesso está BLOQUEADO
   if (matchedAccess.status === 'blocked') {
     res.status(403).json({
       success: false,
@@ -1050,14 +1097,14 @@ app.post('/api/auth/verify-pin', async (req, res) => {
     return;
   }
 
-  // Se o PIN confere, mas o acesso foi REVOGADO
+  // Se a credencial confere, mas o acesso foi REVOGADO
   if (matchedAccess.status === 'revoked') {
     res.status(403).json({
       success: false,
       isAccessRevoked: true,
       code: 'access_revoked',
-      error: `O código de acesso de "${matchedAccess.name}" foi revogado pela administração e não é mais válido.`,
-      diagnostic: 'Código de acesso excluído/revogado definitivamente.',
+      error: `O acesso de "${matchedAccess.name}" foi revogado pela administração e não é mais válido.`,
+      diagnostic: 'Acesso excluído/revogado definitivamente.',
     });
     return;
   }
@@ -1127,6 +1174,219 @@ app.post('/api/auth/verify-pin', async (req, res) => {
     requiresRegistration: !hasProfile,
     readerProfile: matchedAccess.profile || null,
   });
+});
+
+// 2.0 Auto-cadastro público de novo leitor (/register) - inicia como Pendente / Bloqueado (isApproved: false)
+app.post('/api/auth/register', async (req, res) => {
+  try {
+    const { fullName, email, phone, password, confirmPassword } = req.body || {};
+
+    // 1. Validação do Nome Completo
+    const rawName = typeof fullName === 'string' ? fullName.trim() : '';
+    if (!rawName || rawName.length < 3) {
+      res.status(400).json({
+        success: false,
+        error: 'Por favor, informe seu nome completo (mínimo 3 caracteres).',
+      });
+      return;
+    }
+    const formattedName = formatFullName(rawName);
+    if (formattedName.split(' ').length < 2) {
+      res.status(400).json({
+        success: false,
+        error: 'Por favor, informe seu nome e pelo menos um sobrenome.',
+      });
+      return;
+    }
+
+    // 2. Validação de E-mail e/ou WhatsApp (pelo menos um contato válido é obrigatório)
+    const rawEmail = typeof email === 'string' ? email.trim() : '';
+    const rawPhone = typeof phone === 'string' ? phone.trim() : '';
+
+    if (!rawEmail && !rawPhone) {
+      res.status(400).json({
+        success: false,
+        error: 'Informe ao menos um meio de contato: E-mail ou WhatsApp.',
+      });
+      return;
+    }
+
+    let cleanEmail = '';
+    if (rawEmail) {
+      const emailCheck = validateEmail(rawEmail);
+      if (!emailCheck.isValid) {
+        res.status(400).json({
+          success: false,
+          error: emailCheck.error || 'E-mail inválido.',
+        });
+        return;
+      }
+      cleanEmail = emailCheck.normalized;
+    }
+
+    let normalizedPhone = '';
+    let formattedPhone = '';
+    if (rawPhone) {
+      const phoneCheck = validateBrazilianMobilePhone(rawPhone);
+      if (!phoneCheck.isValid) {
+        res.status(400).json({
+          success: false,
+          error: phoneCheck.error || 'Número de WhatsApp inválido. Use o padrão (DD) 9XXXX-XXXX.',
+        });
+        return;
+      }
+      normalizedPhone = phoneCheck.normalized;
+      formattedPhone = formatPhoneNumber(normalizedPhone);
+    }
+
+    // 3. Validação da Senha Pessoal de Acesso
+    const cleanPassword = normalizeAccessCredential(password);
+    if (!cleanPassword || cleanPassword.length < 6) {
+      res.status(400).json({
+        success: false,
+        error: 'Crie uma senha pessoal com no mínimo 6 caracteres.',
+      });
+      return;
+    }
+    if (cleanPassword.length > 64) {
+      res.status(400).json({
+        success: false,
+        error: 'A senha pessoal deve ter no máximo 64 caracteres.',
+      });
+      return;
+    }
+    if (confirmPassword !== undefined) {
+      const cleanConfirm = normalizeAccessCredential(confirmPassword);
+      if (cleanPassword !== cleanConfirm) {
+        res.status(400).json({
+          success: false,
+          error: 'A confirmação da senha não confere com a senha digitada.',
+        });
+        return;
+      }
+    }
+
+    // 4. Sincroniza memória com o Firestore antes de checar duplicidades
+    if (firebaseServerStore.isReady()) {
+      try {
+        const cloudReaders = await firebaseServerStore.loadAllReaderAccesses();
+        if (cloudReaders.length > 0) {
+          const map = new Map<string, ReaderAccessRecord>();
+          for (const r of cloudReaders) {
+            if (r.pinHash && r.pinSalt) map.set(r.id, r);
+          }
+          for (const local of securityConfig.readerAccesses || []) {
+            if (!map.has(local.id)) map.set(local.id, local);
+          }
+          securityConfig.readerAccesses = Array.from(map.values());
+        }
+      } catch {
+        // Segue com cache local
+      }
+    }
+
+    const existingAccesses = securityConfig.readerAccesses || [];
+
+    // 5. Evita duplicidade por E-mail ou WhatsApp
+    for (const existing of existingAccesses) {
+      const existingEmail = (existing.email || existing.profile?.email || '').trim().toLowerCase();
+      const existingPhone = (existing.profile?.phone || '').replace(/\D/g, '');
+      if (cleanEmail && existingEmail && existingEmail === cleanEmail) {
+        res.status(409).json({
+          success: false,
+          error: 'Já existe um cadastro registrado com este e-mail. Caso já tenha se cadastrado, aguarde a liberação pela administração.',
+        });
+        return;
+      }
+      if (normalizedPhone && existingPhone && existingPhone === normalizedPhone) {
+        res.status(409).json({
+          success: false,
+          error: 'Já existe um cadastro registrado com este WhatsApp. Caso já tenha se cadastrado, aguarde a liberação pela administração.',
+        });
+        return;
+      }
+    }
+
+    // 6. Evita colisão direta de credencial para login inequívoco
+    for (const existing of existingAccesses) {
+      if (existing.pinHash && existing.pinSalt && verifyPinHash(cleanPassword, existing.pinHash, existing.pinSalt)) {
+        res.status(409).json({
+          success: false,
+          error: 'Por segurança, escolha uma senha pessoal diferente (mais exclusiva).',
+        });
+        return;
+      }
+    }
+    if (securityConfig.pinHash && securityConfig.pinSalt && verifyPinHash(cleanPassword, securityConfig.pinHash, securityConfig.pinSalt)) {
+      res.status(409).json({
+        success: false,
+        error: 'Por segurança, escolha uma senha pessoal diferente.',
+      });
+      return;
+    }
+
+    // 7. Gera hash PBKDF2 seguro e registra com isApproved: false e status: 'blocked'
+    const salt = crypto.randomBytes(16).toString('hex');
+    const hash = hashAccessPassword(cleanPassword, salt);
+    const now = new Date().toISOString();
+    const id = `reader-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`;
+
+    const newRecord: ReaderAccessRecord = {
+      id,
+      name: formattedName,
+      email: cleanEmail,
+      pinHash: hash,
+      pinSalt: salt,
+      status: 'blocked',
+      isApproved: false,
+      selfRegistered: true,
+      approvedAt: null,
+      createdAt: now,
+      expiresAt: null,
+      lastUsedAt: null,
+      notes: 'Auto-cadastro público aguardando aprovação editorial',
+      hasProfile: true,
+      profile: {
+        fullName: formattedName,
+        email: cleanEmail,
+        phone: normalizedPhone,
+        phoneFormatted: formattedPhone,
+        birthDate: '',
+        gender: 'Prefiro não informar',
+        maritalStatus: 'Prefiro não informar',
+        registeredAt: now,
+        updatedAt: now,
+      },
+      updatedAt: now,
+    };
+
+    if (!securityConfig.readerAccesses) {
+      securityConfig.readerAccesses = [];
+    }
+    securityConfig.readerAccesses.unshift(newRecord);
+    saveSecurityConfig(securityConfig);
+
+    // Persiste imediatamente no Firebase Cloud Firestore
+    try {
+      await firebaseServerStore.saveReaderAccess(newRecord);
+      console.log(`[Firebase] Novo auto-cadastro "${newRecord.name}" salvo como pendente (isApproved: false) no Firestore (ID: ${newRecord.id}).`);
+    } catch (err: any) {
+      console.warn('[Firebase] Aviso ao salvar auto-cadastro no Firestore:', err?.message || err);
+    }
+
+    res.status(201).json({
+      success: true,
+      isApproved: false,
+      readerName: formattedName,
+      message: 'Cadastro realizado com sucesso! Seu acesso será liberado em breve pela administração.',
+    });
+  } catch (err: any) {
+    console.error('[auth/register] Erro no auto-cadastro:', err);
+    res.status(500).json({
+      success: false,
+      error: 'Não foi possível concluir o cadastro no momento. Tente novamente.',
+    });
+  }
 });
 
 // 2.1 Cadastro Pessoal do Leitor no Primeiro Acesso (vinculado ao identificador interno do PIN)
@@ -1759,6 +2019,40 @@ app.post('/api/admin/content-availability', requireAdminAuth, (req, res) => {
   });
 });
 
+// 9.1 Atualização de imagem/banner de cabeçalho do capítulo (requer autenticação de administrador)
+app.post('/api/admin/chapter-image', requireAdminAuth, (req, res) => {
+  const { bookId, chapterId, headerImage } = req.body || {};
+  if (!bookId || !chapterId) {
+    res.status(400).json({
+      success: false,
+      error: 'bookId e chapterId são obrigatórios.',
+    });
+    return;
+  }
+
+  if (!securityConfig.chapterHeaderImages) {
+    securityConfig.chapterHeaderImages = {};
+  }
+
+  const key = `${bookId}:${chapterId}`;
+  if (typeof headerImage === 'string' && headerImage.trim()) {
+    securityConfig.chapterHeaderImages[key] = headerImage.trim();
+  } else {
+    delete securityConfig.chapterHeaderImages[key];
+  }
+
+  saveSecurityConfig(securityConfig);
+  syncSystemConfigToFirestore();
+
+  res.json({
+    success: true,
+    key,
+    headerImage: securityConfig.chapterHeaderImages[key] || null,
+    chapterHeaderImages: securityConfig.chapterHeaderImages,
+    message: 'Imagem do capítulo atualizada e salva com persistência para todos os leitores.',
+  });
+});
+
 /* ==========================================================================
    10. GESTÃO DE ACESSOS E PINS DOS LEITORES (/api/admin/readers/*)
    ========================================================================== */
@@ -1768,7 +2062,11 @@ function sanitizeReaderAccess(acc: ReaderAccessRecord) {
   return {
     id: acc.id,
     name: acc.name,
+    email: acc.email || acc.profile?.email || '',
     status: acc.status,
+    isApproved: acc.isApproved !== false,
+    selfRegistered: Boolean(acc.selfRegistered),
+    approvedAt: acc.approvedAt || null,
     createdAt: acc.createdAt,
     expiresAt: acc.expiresAt,
     lastUsedAt: acc.lastUsedAt,
@@ -1867,13 +2165,18 @@ app.post('/api/admin/readers', requireAdminAuth, async (req, res) => {
   const hash = hashPin(pinToAssign, salt);
   const id = `reader-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`;
 
+  const now = new Date().toISOString();
   const newRecord: ReaderAccessRecord = {
     id,
     name: cleanName,
+    email: '',
     pinHash: hash,
     pinSalt: salt,
     status: 'active',
-    createdAt: new Date().toISOString(),
+    isApproved: true,
+    selfRegistered: false,
+    approvedAt: now,
+    createdAt: now,
     expiresAt: cleanExpiresAt,
     lastUsedAt: null,
     notes: typeof notes === 'string' ? notes.trim() : '',
@@ -1929,6 +2232,10 @@ app.patch('/api/admin/readers/:id/status', requireAdminAuth, async (req, res) =>
   }
 
   target.status = targetStatus;
+  if (targetStatus === 'active') {
+    target.isApproved = true;
+    target.approvedAt = target.approvedAt || new Date().toISOString();
+  }
   target.updatedAt = new Date().toISOString();
 
   // Se bloqueado ou revogado, derruba sessões ativas deste leitor imediatamente
@@ -1956,6 +2263,43 @@ app.patch('/api/admin/readers/:id/status', requireAdminAuth, async (req, res) =>
   });
 });
 
+// 10.3.0 Aprovar / Liberar Acesso de leitor com um único clique
+app.post('/api/admin/readers/:id/approve', requireAdminAuth, async (req, res) => {
+  const { id } = req.params;
+  const target = (securityConfig.readerAccesses || []).find((a) => a.id === id);
+  if (!target) {
+    res.status(404).json({
+      success: false,
+      error: 'Acesso de leitor não encontrado.',
+    });
+    return;
+  }
+
+  const now = new Date().toISOString();
+  target.isApproved = true;
+  target.status = 'active';
+  target.approvedAt = now;
+  target.updatedAt = now;
+  if (target.notes === 'Auto-cadastro público aguardando aprovação editorial') {
+    target.notes = 'Auto-cadastro aprovado pela administração';
+  }
+
+  saveSecurityConfig(securityConfig);
+
+  try {
+    await firebaseServerStore.saveReaderAccess(target);
+    console.log(`[Firebase] Leitor "${target.name}" aprovado e liberado no Firestore (ID: ${target.id}).`);
+  } catch (err: any) {
+    console.warn('[Firebase] Erro ao aprovar leitor no Firestore:', err?.message || err);
+  }
+
+  res.json({
+    success: true,
+    access: sanitizeReaderAccess(target),
+    message: `Acesso de "${target.name}" aprovado e liberado com sucesso!`,
+  });
+});
+
 // 10.3.1 Atualizar dados cadastrais pessoais e observações do leitor diretamente (salvando no Firestore e preservando PIN)
 app.put('/api/admin/readers/:id/profile', requireAdminAuth, async (req, res) => {
   const { id } = req.params;
@@ -1968,7 +2312,7 @@ app.put('/api/admin/readers/:id/profile', requireAdminAuth, async (req, res) => 
     return;
   }
 
-  const { fullName, phone, birthDate, gender, maritalStatus, notes } = req.body || {};
+  const { fullName, email, phone, birthDate, gender, maritalStatus, notes } = req.body || {};
 
   // Validação 1: Nome Completo
   const rawFullName = typeof fullName === 'string' ? fullName.trim() : '';
@@ -1982,26 +2326,60 @@ app.put('/api/admin/readers/:id/profile', requireAdminAuth, async (req, res) => 
     return;
   }
 
-  // Validação 2: Celular WhatsApp Brasileiro com DDD
+  // Validação 1.1: E-mail (opcional)
+  let cleanEmail = target.email || target.profile?.email || '';
+  if (typeof email === 'string') {
+    const trimmedEmail = email.trim();
+    if (trimmedEmail) {
+      const emailCheck = validateEmail(trimmedEmail);
+      if (!emailCheck.isValid) {
+        res.status(400).json({ success: false, error: emailCheck.error || 'E-mail inválido.' });
+        return;
+      }
+      cleanEmail = emailCheck.normalized;
+    } else {
+      cleanEmail = '';
+    }
+  }
+
+  // Validação 2: Celular WhatsApp Brasileiro com DDD (obrigatório apenas se não houver e-mail)
   const rawPhone = typeof phone === 'string' ? phone.trim() : '';
-  const phoneValidation = validateBrazilianMobilePhone(rawPhone);
-  if (!phoneValidation.isValid) {
+  let normalizedPhone = '';
+  let formattedPhone = '';
+  if (rawPhone) {
+    const phoneValidation = validateBrazilianMobilePhone(rawPhone);
+    if (!phoneValidation.isValid) {
+      res.status(400).json({
+        success: false,
+        error: phoneValidation.error || 'Número de telefone celular/WhatsApp inválido. Formato esperado: (DD) 9XXXX-XXXX.',
+      });
+      return;
+    }
+    normalizedPhone = phoneValidation.normalized;
+    formattedPhone = formatPhoneNumber(normalizedPhone);
+  } else if (!cleanEmail) {
     res.status(400).json({
       success: false,
-      error: phoneValidation.error || 'Número de telefone celular/WhatsApp inválido. Formato esperado: (DD) 9XXXX-XXXX.',
+      error: 'Informe um WhatsApp com DDD ou um e-mail válido.',
     });
     return;
   }
-  const normalizedPhone = phoneValidation.normalized;
-  const formattedPhone = formatPhoneNumber(normalizedPhone);
 
-  // Validação 3: Data de nascimento
+  // Validação 3: Data de nascimento (opcional se o leitor fez apenas auto-cadastro)
   const rawBirthDate = typeof birthDate === 'string' ? birthDate.trim() : '';
-  const ageResult = calculateDetailedAge(rawBirthDate);
-  if (!ageResult.isValid) {
+  if (rawBirthDate) {
+    const ageResult = calculateDetailedAge(rawBirthDate);
+    if (!ageResult.isValid) {
+      res.status(400).json({
+        success: false,
+        error: ageResult.error || 'Data de nascimento inválida ou futura.',
+      });
+      return;
+    }
+  } else if (!target.selfRegistered) {
     res.status(400).json({
       success: false,
-      error: ageResult.error || 'Data de nascimento inválida ou futura.',
+      error: 'Por favor, informe a data de nascimento.',
     });
     return;
   }
@@ -2030,14 +2408,16 @@ app.put('/api/admin/readers/:id/profile', requireAdminAuth, async (req, res) => 
 
   const now = new Date().toISOString();
 
-  // Atualiza os dados cadastrais mantendo o PIN (pinHash e pinSalt), o status e as permissões estritamente intactos
+  // Atualiza os dados cadastrais mantendo a senha/PIN, o status e as permissões estritamente intactos
   target.name = formattedFullName;
+  target.email = cleanEmail;
   if (typeof notes === 'string') {
     target.notes = notes.trim();
   }
   target.hasProfile = true;
   target.profile = {
     fullName: formattedFullName,
+    email: cleanEmail,
     phone: normalizedPhone,
     phoneFormatted: formattedPhone,
     birthDate: rawBirthDate,
@@ -2429,6 +2809,9 @@ async function startServer() {
 
   const isProd = process.env.NODE_ENV === 'production';
   const httpServer = http.createServer(app);
+
+  // Serve arquivos estáticos da pasta public (imagens, favicon, manifest) com prioridade
+  app.use(express.static(path.resolve(__dirname, 'public')));
 
   if (!isProd) {
     process.env.DISABLE_HMR = 'true';

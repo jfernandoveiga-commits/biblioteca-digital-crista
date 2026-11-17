@@ -9,22 +9,25 @@ import {
   Clock,
   RefreshCw,
   Info,
+  UserPlus,
 } from 'lucide-react';
 import { authService, VerifyPinResult } from '../services/authService';
 import { ReadingTheme } from '../types/book';
-import { standardizePin } from '../utils/textFormatters';
+import { normalizeAccessCredential } from '../utils/textFormatters';
 import { PWAInstallButton } from './PWAInstallButton';
 
 interface PinLockScreenProps {
   theme?: ReadingTheme;
   onAuthenticated: (result?: VerifyPinResult) => void;
   onNavigateToAdmin?: () => void;
+  onNavigateToRegister?: () => void;
 }
 
 export const PinLockScreen: React.FC<PinLockScreenProps> = ({
   theme = 'cream',
   onAuthenticated,
   onNavigateToAdmin,
+  onNavigateToRegister,
 }) => {
   const [pin, setPin] = useState<string>('');
   const [showPin, setShowPin] = useState<boolean>(false);
@@ -85,12 +88,11 @@ export const PinLockScreen: React.FC<PinLockScreenProps> = ({
     if (e) e.preventDefault();
     if (isLoading || lockoutSeconds > 0) return;
 
-    // Padroniza estritamente o PIN: converte para string, remove espaços e caracteres invisíveis
-    const cleanPin = standardizePin(pin);
-    if (!cleanPin) {
-      setErrorMessage('Por favor, digite o PIN para entrar.');
+    const cleanCredential = normalizeAccessCredential(pin);
+    if (!cleanCredential) {
+      setErrorMessage('Por favor, digite seu PIN ou senha para entrar.');
       setErrorCode('empty_pin');
-      setDiagnosticInfo('Nenhum dígito válido detectado no campo.');
+      setDiagnosticInfo('Nenhum caractere válido detectado no campo.');
       inputRef.current?.focus();
       return;
     }
@@ -100,7 +102,7 @@ export const PinLockScreen: React.FC<PinLockScreenProps> = ({
     setErrorCode(null);
     setDiagnosticInfo(null);
 
-    const result: VerifyPinResult = await authService.verifyPin(cleanPin);
+    const result: VerifyPinResult = await authService.verifyPin(cleanCredential);
 
     setIsLoading(false);
 
@@ -110,10 +112,8 @@ export const PinLockScreen: React.FC<PinLockScreenProps> = ({
       setDiagnosticInfo(null);
       const isProfileComplete = Boolean(
         result.hasProfile &&
-        !result.requiresRegistration &&
-        result.readerProfile?.fullName &&
-        result.readerProfile?.phone &&
-        result.readerProfile?.birthDate
+        result.requiresRegistration === false &&
+        result.readerProfile?.fullName
       );
       onAuthenticated({
         ...result,
@@ -121,7 +121,7 @@ export const PinLockScreen: React.FC<PinLockScreenProps> = ({
         requiresRegistration: !isProfileComplete,
       });
     } else {
-      setErrorMessage(result.error || 'PIN incorreto. Tente novamente.');
+      setErrorMessage(result.error || 'PIN ou senha incorretos. Tente novamente.');
       setErrorCode(result.code || 'invalid_pin');
       setDiagnosticInfo(result.diagnostic || null);
 
@@ -131,13 +131,16 @@ export const PinLockScreen: React.FC<PinLockScreenProps> = ({
       if (typeof result.retryAfter === 'number' && result.retryAfter > 0) {
         setLockoutSeconds(result.retryAfter);
       }
-      // Limpa e foca para nova tentativa
-      setPin('');
+      // Limpa e foca para nova tentativa apenas se não for aprovação pendente
+      if (result.code !== 'pending_approval') {
+        setPin('');
+      }
       inputRef.current?.focus();
     }
   };
 
   const isDark = theme === 'dark';
+  const isPendingApprovalError = errorCode === 'pending_approval';
 
   return (
     <div
@@ -181,11 +184,11 @@ export const PinLockScreen: React.FC<PinLockScreenProps> = ({
                 isDark ? 'text-zinc-400' : 'text-stone-600'
               }`}
             >
-              Acesso restrito. Insira o PIN autorizado.
+              Acesso restrito. Insira seu PIN ou senha pessoal.
             </p>
           </div>
 
-          {/* Formulário de PIN */}
+          {/* Formulário de PIN / Senha */}
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
               <label
@@ -194,7 +197,7 @@ export const PinLockScreen: React.FC<PinLockScreenProps> = ({
                   isDark ? 'text-zinc-300' : 'text-stone-600'
                 }`}
               >
-                PIN de Acesso
+                PIN ou Senha de Acesso
               </label>
 
               <div className="relative">
@@ -210,13 +213,11 @@ export const PinLockScreen: React.FC<PinLockScreenProps> = ({
                   id="pin-input"
                   ref={inputRef}
                   type={showPin ? 'text' : 'password'}
-                  inputMode="numeric"
+                  inputMode="text"
                   autoComplete="current-password"
                   value={pin}
                   onChange={(e) => {
-                    // Padroniza e higieniza em tempo real contra espaços acidentais ou quebras de linha
-                    const sanitized = standardizePin(e.target.value);
-                    setPin(sanitized);
+                    setPin(e.target.value);
                     if (errorMessage && lockoutSeconds === 0) {
                       setErrorMessage(null);
                       setErrorCode(null);
@@ -231,18 +232,20 @@ export const PinLockScreen: React.FC<PinLockScreenProps> = ({
                   } ${
                     lockoutSeconds > 0
                       ? 'opacity-60 cursor-not-allowed border-rose-300 dark:border-rose-800'
+                      : isPendingApprovalError
+                      ? 'border-amber-400 dark:border-amber-600 ring-1 ring-amber-400/20'
                       : errorMessage
                       ? 'border-rose-400 dark:border-rose-700 ring-1 ring-rose-400/20'
                       : ''
                   }`}
                 />
 
-                {/* Botão de alternar visibilidade dos dígitos */}
+                {/* Botão de alternar visibilidade */}
                 <button
                   type="button"
                   onClick={() => setShowPin(!showPin)}
                   disabled={isLoading || lockoutSeconds > 0}
-                  aria-label={showPin ? 'Ocultar PIN' : 'Mostrar PIN'}
+                  aria-label={showPin ? 'Ocultar senha' : 'Mostrar senha'}
                   className={`absolute inset-y-0 right-0 pr-3.5 flex items-center transition-colors cursor-pointer ${
                     isDark
                       ? 'text-zinc-400 hover:text-zinc-200'
@@ -254,7 +257,7 @@ export const PinLockScreen: React.FC<PinLockScreenProps> = ({
               </div>
             </div>
 
-            {/* Alerta de erro com diagnóstico claro e robusto */}
+            {/* Alerta de erro ou aprovação pendente */}
             {lockoutSeconds > 0 ? (
               <div
                 className={`p-3.5 rounded-xl border flex items-start gap-2.5 text-xs animate-in fade-in duration-200 ${
@@ -278,17 +281,28 @@ export const PinLockScreen: React.FC<PinLockScreenProps> = ({
               errorMessage && (
                 <div
                   className={`p-3.5 rounded-xl border space-y-2 text-xs animate-in fade-in duration-200 ${
-                    isDark
+                    isPendingApprovalError
+                      ? isDark
+                        ? 'bg-amber-950/40 border-amber-800/60 text-amber-200'
+                        : 'bg-amber-50 border-amber-200 text-amber-900'
+                      : isDark
                       ? 'bg-rose-950/40 border-rose-800/60 text-rose-300'
                       : 'bg-rose-50 border-rose-200 text-rose-800'
                   }`}
                   role="alert"
                 >
                   <div className="flex items-start gap-2.5">
-                    <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-rose-500" />
+                    {isPendingApprovalError ? (
+                      <Clock className="w-4 h-4 shrink-0 mt-0.5 text-amber-600 dark:text-amber-400" />
+                    ) : (
+                      <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-rose-500" />
+                    )}
                     <div className="flex-1">
+                      {isPendingApprovalError && (
+                        <p className="font-semibold mb-0.5">Acesso aguardando liberação</p>
+                      )}
                       <p className="font-medium leading-relaxed">{errorMessage}</p>
-                      {attemptsLeft !== null && attemptsLeft > 0 && attemptsLeft < 5 && (
+                      {attemptsLeft !== null && attemptsLeft > 0 && attemptsLeft < 5 && !isPendingApprovalError && (
                         <p className="mt-1 text-[11px] opacity-90">
                           Tentativas restantes antes do bloqueio: <strong>{attemptsLeft}</strong>
                         </p>
@@ -297,7 +311,7 @@ export const PinLockScreen: React.FC<PinLockScreenProps> = ({
                   </div>
 
                   {/* Informação diagnóstica detalhada */}
-                  {diagnosticInfo && (
+                  {diagnosticInfo && !isPendingApprovalError && (
                     <div
                       className={`text-[11px] px-2.5 py-1.5 rounded-lg flex items-center gap-1.5 ${
                         isDark ? 'bg-rose-900/40 text-rose-200' : 'bg-rose-100/70 text-rose-900'
@@ -314,7 +328,7 @@ export const PinLockScreen: React.FC<PinLockScreenProps> = ({
             {/* Botão de envio */}
             <button
               type="submit"
-              disabled={isLoading || lockoutSeconds > 0 || !standardizePin(pin)}
+              disabled={isLoading || lockoutSeconds > 0 || !normalizeAccessCredential(pin)}
               className={`w-full py-3 px-4 rounded-xl text-sm font-semibold tracking-wide transition-all duration-200 flex items-center justify-center gap-2 cursor-pointer ${
                 isDark
                   ? 'bg-amber-400 hover:bg-amber-300 active:bg-amber-500 text-zinc-950 shadow-md shadow-amber-400/10'
@@ -332,9 +346,34 @@ export const PinLockScreen: React.FC<PinLockScreenProps> = ({
             </button>
           </form>
 
+          {/* Ação pública de auto-cadastro */}
+          {onNavigateToRegister && (
+            <div
+              className={`mt-5 pt-4 border-t text-center space-y-2 ${
+                isDark ? 'border-zinc-800/80' : 'border-stone-200/80'
+              }`}
+            >
+              <p className={`text-xs ${isDark ? 'text-zinc-400' : 'text-stone-600'}`}>
+                Recebeu o link e ainda não possui acesso?
+              </p>
+              <button
+                type="button"
+                onClick={onNavigateToRegister}
+                className={`w-full py-2.5 px-4 rounded-xl text-xs font-semibold border transition-colors flex items-center justify-center gap-2 cursor-pointer ${
+                  isDark
+                    ? 'border-amber-500/40 bg-amber-500/10 text-amber-300 hover:bg-amber-500/20'
+                    : 'border-stone-300 bg-stone-50 text-stone-800 hover:bg-stone-100'
+                }`}
+              >
+                <UserPlus className="w-3.5 h-3.5" />
+                <span>Criar Cadastro e Senha Pessoal</span>
+              </button>
+            </div>
+          )}
+
           {/* Rodapé informativo de segurança */}
           <div
-            className={`mt-6 pt-5 border-t flex flex-col items-center justify-center gap-3 text-[11px] text-center ${
+            className={`mt-5 pt-4 border-t flex flex-col items-center justify-center gap-3 text-[11px] text-center ${
               isDark
                 ? 'border-zinc-800/80 text-zinc-400'
                 : 'border-stone-200/80 text-stone-600'

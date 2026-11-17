@@ -117,6 +117,7 @@ export type ReaderMaritalStatus =
 
 export interface ReaderProfile {
   fullName: string; // Nome completo padronizado
+  email?: string; // E-mail opcional do leitor
   phone: string; // Dígitos normalizados com DDD (ex: "19981026699")
   phoneFormatted: string; // Telefone formatado para exibição: "(19) 98102-6699"
   birthDate: string; // YYYY-MM-DD
@@ -138,9 +139,13 @@ export interface ReaderContentPermissions {
 export interface ReaderAccessRecord {
   id: string;
   name: string; // Identificação inicial ou nome do leitor
+  email?: string; // E-mail de contato do leitor (quando fornecido)
   pinHash?: string;
   pinSalt?: string;
   status: ReaderAccessStatus;
+  isApproved?: boolean; // false = Pendente de aprovação editorial; true/undefined = Aprovado
+  selfRegistered?: boolean; // true = Cadastrado pelo próprio leitor via /register
+  approvedAt?: string | null; // Data/hora da aprovação pelo administrador
   createdAt: string;
   expiresAt: string | null; // Data de expiração opcional
   lastUsedAt: string | null;
@@ -149,6 +154,14 @@ export interface ReaderAccessRecord {
   profile?: ReaderProfile | null; // Dados cadastrais vinculados
   contentPermissions?: ReaderContentPermissions | null; // Gestão individual de Liberado/Bloqueado de livros e capítulos
   updatedAt?: string;
+}
+
+export interface SelfRegistrationInput {
+  fullName: string;
+  email?: string;
+  phone?: string;
+  password: string;
+  confirmPassword?: string;
 }
 
 export interface ReaderProfileUpdateInput {
@@ -161,6 +174,7 @@ export interface ReaderProfileUpdateInput {
 
 export interface ReaderProfileAdminUpdateInput {
   fullName: string;
+  email?: string;
   phone: string;
   birthDate: string;
   gender: ReaderGender;

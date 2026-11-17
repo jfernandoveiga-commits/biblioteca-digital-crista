@@ -339,3 +339,30 @@ export function isPinFormatValid(input: unknown): boolean {
   const pin = standardizePin(input);
   return pin.length >= 4 && pin.length <= 12;
 }
+
+/**
+ * Normaliza credenciais pessoais (PIN ou senha alfanumérica/simbólica)
+ * removendo apenas espaços nas extremidades e caracteres invisíveis,
+ * preservando letras maiúsculas/minúsculas, hífens e símbolos especiais.
+ */
+export function normalizeAccessCredential(input: unknown): string {
+  if (input === null || input === undefined) return '';
+  return String(input)
+    .replace(/[\u200B-\u200D\uFEFF]/g, '')
+    .trim();
+}
+
+/**
+ * Valida formato básico de endereço de e-mail.
+ */
+export function validateEmail(input: string): { isValid: boolean; normalized: string; error?: string } {
+  const normalized = (input || '').trim().toLowerCase();
+  if (!normalized) {
+    return { isValid: false, normalized: '', error: 'Informe um e-mail válido.' };
+  }
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+  if (!emailRegex.test(normalized)) {
+    return { isValid: false, normalized, error: 'O endereço de e-mail informado não parece válido.' };
+  }
+  return { isValid: true, normalized };
+}

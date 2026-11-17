@@ -554,6 +554,43 @@ export const adminAuthService = {
     }
   },
 
+  async approveReader(
+    id: string
+  ): Promise<{
+    success: boolean;
+    access?: ReaderAccessRecord;
+    message?: string;
+    error?: string;
+  }> {
+    try {
+      const response = await fetch(`/api/admin/readers/${id}/approve`, {
+        method: 'POST',
+        headers: this.getAuthHeaders(),
+        credentials: 'include',
+      });
+
+      const data = await response.json();
+      if (!response.ok || !data.success) {
+        return {
+          success: false,
+          error: data.error || 'Falha ao aprovar acesso do leitor.',
+        };
+      }
+
+      return {
+        success: true,
+        access: data.access,
+        message: data.message,
+      };
+    } catch (err) {
+      console.error('[adminAuthService] Erro ao aprovar leitor:', err);
+      return {
+        success: false,
+        error: 'Erro de conexão ao aprovar leitor.',
+      };
+    }
+  },
+
   async updateReaderPermissions(
     id: string,
     contentPermissions: ReaderContentPermissions

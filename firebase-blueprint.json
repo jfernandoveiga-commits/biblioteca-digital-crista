@@ -13,9 +13,13 @@
           "type": "string",
           "description": "Nome de exibição ou identificador inicial do leitor"
         },
+        "email": {
+          "type": "string",
+          "description": "E-mail do leitor (opcional)"
+        },
         "pinHash": {
           "type": "string",
-          "description": "Hash PBKDF2 irreversível do PIN"
+          "description": "Hash PBKDF2 irreversível do PIN ou senha"
         },
         "pinSalt": {
           "type": "string",
@@ -26,10 +30,22 @@
           "enum": ["active", "blocked", "revoked"],
           "description": "Estado do acesso"
         },
+        "isApproved": {
+          "type": "boolean",
+          "description": "Indica se o cadastro foi aprovado pelo administrador (false = pendente)"
+        },
+        "selfRegistered": {
+          "type": "boolean",
+          "description": "Indica se o usuário realizou auto-cadastro pela página pública"
+        },
+        "approvedAt": {
+          "type": "string",
+          "description": "Data/hora em que o administrador aprovou o acesso"
+        },
         "createdAt": {
           "type": "string",
           "format": "date-time",
-          "description": "Data de emissão do PIN"
+          "description": "Data de emissão do PIN ou cadastro"
         },
         "expiresAt": {
           "type": "string",
@@ -62,6 +78,10 @@
         "fullName": {
           "type": "string",
           "description": "Nome completo formatado com partículas e acentos"
+        },
+        "email": {
+          "type": "string",
+          "description": "E-mail opcional do leitor"
         },
         "phone": {
           "type": "string",

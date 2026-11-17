@@ -15,6 +15,10 @@ export const eAiCrenteChapter4: Chapter = {
   number: 4,
   romanNumber: 'Capítulo 4',
   title: 'O culto acabou, mas o pecado continuou',
+  // Imagem/ilustração de abertura do capítulo (configurável como headerImage ou chapterImage)
+  headerImage: '/assets/aistudio/e_ai_crente_capitulo_4_16x9.jpg',
+  chapterImage: '/assets/aistudio/e_ai_crente_capitulo_4_16x9.jpg',
+  imageAlt: 'Ilustração artística: O culto acabou, mas o pecado continuou',
   estimatedReadingTimeMinutes: 11,
   status: 'published',
   editorialNote: 'Texto autoral integral fornecido pelo autor Pr. Fernando Veiga. Cadastrado com status inicial Bloqueado (Indisponível) por padrão, aguardando liberação pelo administrador.',

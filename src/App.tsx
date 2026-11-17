@@ -8,6 +8,7 @@ import { AdminPanel } from './components/AdminPanel';
 import { PWAInstallButton } from './components/PWAInstallButton';
 import { OfflineIndicator } from './components/OfflineIndicator';
 import { ReaderRegistrationScreen } from './components/ReaderRegistrationScreen';
+import { SelfRegistrationScreen } from './components/SelfRegistrationScreen';
 import { ContinueReadingCard } from './components/ContinueReadingCard';
 import { smartBookmarkService, SmartBookmark } from './services/smartBookmarkService';
 import { authService } from './services/authService';
@@ -212,10 +213,8 @@ export default function App() {
             if (session.authenticated) {
               const isProfileComplete = Boolean(
                 session.hasProfile &&
-                !session.requiresRegistration &&
-                session.readerProfile?.fullName &&
-                session.readerProfile?.phone &&
-                session.readerProfile?.birthDate
+                session.requiresRegistration === false &&
+                session.readerProfile?.fullName
               );
               setHasProfile(isProfileComplete);
               setReaderProfile(session.readerProfile || null);
@@ -440,6 +439,16 @@ export default function App() {
     );
   }
 
+  // ROTA 1.5: Página Pública de Auto-Cadastro e Criação de Senha (/register)
+  if (currentRoute.startsWith('/register')) {
+    return (
+      <SelfRegistrationScreen
+        theme={theme}
+        onBackToLogin={() => navigateTo('/')}
+      />
+    );
+  }
+
   // ROTA 2: Verificação de Sessão Inicial
   if (isCheckingAuth && !isAdminSession) {
     return (
@@ -459,7 +468,7 @@ export default function App() {
     );
   }
 
-  // ROTA 3: Tela de Acesso por PIN (se ainda não autenticado no servidor)
+  // ROTA 3: Tela de Acesso por PIN / Senha (se ainda não autenticado no servidor)
   // BYPASS COMPLETO: administradores nunca passam por esta tela
   if (!isAuthenticated && !isAdminSession) {
     return (
@@ -469,29 +478,26 @@ export default function App() {
           setIsAuthenticated(true);
           const isComplete = Boolean(
             result?.hasProfile &&
-            !result?.requiresRegistration &&
-            result?.readerProfile?.fullName &&
-            result?.readerProfile?.phone &&
-            result?.readerProfile?.birthDate
+            result?.requiresRegistration === false &&
+            result?.readerProfile?.fullName
           );
           setHasProfile(isComplete);
           setReaderProfile(result?.readerProfile || null);
           setReaderName(result?.readerName || '');
         }}
         onNavigateToAdmin={() => navigateTo('/admin')}
+        onNavigateToRegister={() => navigateTo('/register')}
       />
     );
   }
 
-  // ROTA 3.5: Obrigatoriedade de Cadastro no Primeiro Acesso
+  // ROTA 3.5: Obrigatoriedade de Cadastro no Primeiro Acesso (para PINs criados pelo admin sem perfil)
   // BYPASS COMPLETO: administradores nunca passam pela tela de cadastro de leitor
   if (!isAdminSession) {
     const isProfileComplete = Boolean(
       hasProfile === true &&
       readerProfile &&
-      readerProfile.fullName &&
-      readerProfile.phone &&
-      readerProfile.birthDate
+      readerProfile.fullName
     );
 
     if (!isProfileComplete) {

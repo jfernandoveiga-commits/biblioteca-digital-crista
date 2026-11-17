@@ -52,6 +52,7 @@ import {
   CheckCheck,
   Ban,
   Pencil,
+  Mail,
 } from 'lucide-react';
 import { adminAuthService, AdminSystemStatus } from '../services/adminAuthService';
 import {
@@ -77,6 +78,7 @@ import {
   formatFullName,
   formatPhoneNumber,
   validateBrazilianMobilePhone,
+  validateEmail,
 } from '../utils/textFormatters';
 
 interface AdminPanelProps {
@@ -84,7 +86,7 @@ interface AdminPanelProps {
   onNavigateToLibrary: () => void;
 }
 
-type AdminTab = 'readers' | 'features' | 'books' | 'security' | 'credentials' | 'pwa';
+type AdminTab = 'readers' | 'books' | 'credentials' | 'features';
 
 export const AdminPanel: React.FC<AdminPanelProps> = ({
   theme = 'cream',
@@ -122,14 +124,16 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const [customExpiryDate, setCustomExpiryDate] = useState<string>('');
   const [isCreatingReader, setIsCreatingReader] = useState<boolean>(false);
   const [searchTerm, setSearchTerm] = useState<string>('');
-  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'blocked' | 'revoked'>('all');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'pending_approval' | 'active' | 'blocked' | 'revoked'>('all');
   const [registrationFilter, setRegistrationFilter] = useState<'all' | 'registered' | 'pending'>('all');
   const [selectedReaderDetails, setSelectedReaderDetails] = useState<ReaderAccessRecord | null>(null);
+  const [approvingReaderId, setApprovingReaderId] = useState<string | null>(null);
 
   // Modal e Formulário de Edição de Cadastro de Leitor
   const [editingReader, setEditingReader] = useState<ReaderAccessRecord | null>(null);
   const [editForm, setEditForm] = useState<{
     fullName: string;
+    email: string;
     phone: string;
     birthDate: string;
     gender: ReaderGender;
@@ -137,6 +141,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     notes: string;
   }>({
     fullName: '',
+    email: '',
     phone: '',
     birthDate: '',
     gender: 'Prefiro não informar',
@@ -610,6 +615,30 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     });
   };
 
+  // Aprovação em um único clique de leitor pendente (isApproved: false -> true, status: active)
+  const handleApproveReader = async (reader: ReaderAccessRecord) => {
+    if (approvingReaderId) return;
+    setApprovingReaderId(reader.id);
+    setActionErrorMessage(null);
+    try {
+      const res = await adminAuthService.approveReader(reader.id);
+      if (res.success && res.access) {
+        setReaders((prev) => prev.map((r) => (r.id === res.access!.id ? res.access! : r)));
+        if (selectedReaderDetails?.id === res.access.id) {
+          setSelectedReaderDetails(res.access);
+        }
+        setActionSuccessMessage(res.message || `Acesso de "${reader.name}" aprovado e liberado!`);
+        await fetchStatus();
+      } else {
+        setActionErrorMessage(res.error || 'Falha ao aprovar acesso do leitor.');
+      }
+    } catch {
+      setActionErrorMessage('Erro de conexão ao aprovar leitor.');
+    } finally {
+      setApprovingReaderId(null);
+    }
+  };
+
   // Exclusão definitiva de leitor
   const handleDeleteReader = (reader: ReaderAccessRecord) => {
     setConfirmModal({
@@ -642,6 +671,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     const p = reader.profile;
     setEditForm({
       fullName: p?.fullName || reader.name || '',
+      email: reader.email || p?.email || '',
       phone: p?.phoneFormatted || (p?.phone ? formatPhoneNumber(p.phone) : ''),
       birthDate: p?.birthDate || '',
       gender: p?.gender || 'Prefiro não informar',
@@ -666,15 +696,37 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       return;
     }
 
-    const phoneValidation = validateBrazilianMobilePhone(editForm.phone);
-    if (!phoneValidation.isValid) {
-      setEditError(phoneValidation.error || 'Número de WhatsApp/celular inválido com DDD.');
+    let cleanEmail = '';
+    if (editForm.email.trim()) {
+      const emailCheck = validateEmail(editForm.email);
+      if (!emailCheck.isValid) {
+        setEditError(emailCheck.error || 'E-mail inválido.');
+        return;
+      }
+      cleanEmail = emailCheck.normalized;
+    }
+
+    let normalizedPhone = '';
+    if (editForm.phone.trim()) {
+      const phoneValidation = validateBrazilianMobilePhone(editForm.phone);
+      if (!phoneValidation.isValid) {
+        setEditError(phoneValidation.error || 'Número de WhatsApp/celular inválido com DDD.');
+        return;
+      }
+      normalizedPhone = phoneValidation.normalized;
+    } else if (!cleanEmail) {
+      setEditError('Informe um número de WhatsApp com DDD ou um e-mail válido.');
       return;
     }
 
-    const ageValidation = calculateDetailedAge(editForm.birthDate);
-    if (!ageValidation.isValid) {
-      setEditError(ageValidation.error || 'Data de nascimento inválida ou futura.');
+    if (editForm.birthDate.trim()) {
+      const ageValidation = calculateDetailedAge(editForm.birthDate);
+      if (!ageValidation.isValid) {
+        setEditError(ageValidation.error || 'Data de nascimento inválida ou futura.');
+        return;
+      }
+    } else if (!editingReader.selfRegistered) {
+      setEditError('Por favor, informe a data de nascimento do leitor.');
       return;
     }
 
@@ -684,8 +736,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     try {
       const res = await adminAuthService.updateReaderProfile(editingReader.id, {
         fullName: formattedName,
-        phone: phoneValidation.normalized,
-        birthDate: editForm.birthDate,
+        email: cleanEmail,
+        phone: normalizedPhone,
+        birthDate: editForm.birthDate.trim(),
         gender: editForm.gender,
         maritalStatus: editForm.maritalStatus,
         notes: editForm.notes,
@@ -1284,12 +1337,14 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     const headers = [
       'ID',
       'Nome Completo',
+      'E-mail',
       'Telefone Celular (WhatsApp)',
       'Data de Nascimento',
       'Idade Detalhada',
       'Sexo',
       'Estado Civil',
-      'Status do PIN',
+      'Aprovação',
+      'Status do Acesso',
       'Cadastro Concluído',
       'Data de Criação',
       'Último Acesso',
@@ -1307,7 +1362,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       const profile = r.profile;
       const isExpired = r.expiresAt && new Date(r.expiresAt).getTime() < Date.now();
       const statusText =
-        r.status === 'active'
+        r.isApproved === false
+          ? 'Pendente de Aprovação'
+          : r.status === 'active'
           ? isExpired
             ? 'Expirado'
             : 'Ativo'
@@ -1318,11 +1375,13 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       return [
         escapeCsv(r.id),
         escapeCsv(profile?.fullName || r.name),
+        escapeCsv(r.email || profile?.email || 'Não informado'),
         escapeCsv(profile?.phoneFormatted || (profile?.phone ? profile.phone : 'Não informado')),
         escapeCsv(profile?.birthDate ? formatBirthDate(profile.birthDate) : 'Não informado'),
         escapeCsv(profile?.birthDate ? getReaderDetailedAge(profile.birthDate) : 'Não informado'),
         escapeCsv(profile?.gender || 'Não informado'),
         escapeCsv(profile?.maritalStatus || 'Não informado'),
+        escapeCsv(r.isApproved === false ? 'Pendente' : 'Aprovado'),
         escapeCsv(statusText),
         escapeCsv(r.hasProfile && profile ? 'Sim' : 'Pendente'),
         escapeCsv(formatDate(r.createdAt)),
@@ -1565,6 +1624,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 
         {/* NAVEGAÇÃO DE ABAS */}
         <div className="max-w-6xl mx-auto px-4 sm:px-6 flex items-center gap-1 border-t border-stone-100 dark:border-zinc-800/80 overflow-x-auto py-1">
+          {/* 1. Acessos dos Leitores */}
           <button
             onClick={() => setActiveTab('readers')}
             className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-medium transition-colors whitespace-nowrap cursor-pointer ${
@@ -1584,34 +1644,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
             )}
           </button>
 
-          <button
-            onClick={() => setActiveTab('credentials')}
-            className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-medium transition-colors whitespace-nowrap cursor-pointer ${
-              activeTab === 'credentials'
-                ? isDark
-                  ? 'bg-amber-500/20 text-amber-300 font-semibold border border-amber-500/30'
-                  : 'bg-stone-900 text-stone-50 font-semibold'
-                : 'text-stone-600 dark:text-zinc-400 hover:bg-black/5 dark:hover:bg-zinc-800'
-            }`}
-          >
-            <KeyRound className="w-3.5 h-3.5" />
-            <span>Alterar Login e Senha</span>
-          </button>
-
-          <button
-            onClick={() => setActiveTab('features')}
-            className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-medium transition-colors whitespace-nowrap cursor-pointer ${
-              activeTab === 'features'
-                ? isDark
-                  ? 'bg-amber-500/20 text-amber-300 font-semibold border border-amber-500/30'
-                  : 'bg-stone-900 text-stone-50 font-semibold'
-                : 'text-stone-600 dark:text-zinc-400 hover:bg-black/5 dark:hover:bg-zinc-800'
-            }`}
-          >
-            <SlidersHorizontal className="w-3.5 h-3.5" />
-            <span>Funcionalidades da Biblioteca</span>
-          </button>
-
+          {/* 2. Livros e Capítulos */}
           <button
             onClick={() => setActiveTab('books')}
             className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-medium transition-colors whitespace-nowrap cursor-pointer ${
@@ -1626,32 +1659,34 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
             <span>Livros e Capítulos</span>
           </button>
 
+          {/* 3. Alterar Login e Senha */}
           <button
-            onClick={() => setActiveTab('security')}
+            onClick={() => setActiveTab('credentials')}
             className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-medium transition-colors whitespace-nowrap cursor-pointer ${
-              activeTab === 'security'
+              activeTab === 'credentials'
                 ? isDark
                   ? 'bg-amber-500/20 text-amber-300 font-semibold border border-amber-500/30'
                   : 'bg-stone-900 text-stone-50 font-semibold'
                 : 'text-stone-600 dark:text-zinc-400 hover:bg-black/5 dark:hover:bg-zinc-800'
             }`}
           >
-            <Shield className="w-3.5 h-3.5" />
-            <span>Segurança e Acesso</span>
+            <KeyRound className="w-3.5 h-3.5" />
+            <span>Alterar Login e Senha</span>
           </button>
 
+          {/* 4. Funcionalidades da Biblioteca */}
           <button
-            onClick={() => setActiveTab('pwa')}
+            onClick={() => setActiveTab('features')}
             className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-medium transition-colors whitespace-nowrap cursor-pointer ${
-              activeTab === 'pwa'
+              activeTab === 'features'
                 ? isDark
                   ? 'bg-amber-500/20 text-amber-300 font-semibold border border-amber-500/30'
                   : 'bg-stone-900 text-stone-50 font-semibold'
                 : 'text-stone-600 dark:text-zinc-400 hover:bg-black/5 dark:hover:bg-zinc-800'
             }`}
           >
-            <Smartphone className="w-3.5 h-3.5" />
-            <span>App Mobile (PWA)</span>
+            <SlidersHorizontal className="w-3.5 h-3.5" />
+            <span>Funcionalidades da Biblioteca</span>
           </button>
         </div>
       </header>
@@ -1742,13 +1777,31 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
               </div>
 
               {/* Cards de resumo rápido */}
-              <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 mt-5 pt-4 border-t border-stone-100 dark:border-zinc-800">
+              <div className="grid grid-cols-2 sm:grid-cols-6 gap-3 mt-5 pt-4 border-t border-stone-100 dark:border-zinc-800">
                 <div className="p-3 rounded-xl bg-stone-50 dark:bg-zinc-800/50 border border-stone-200/50 dark:border-zinc-700/50">
                   <span className="text-[11px] font-medium text-stone-500 dark:text-zinc-400 block">Total de Acessos</span>
                   <span className="text-lg font-bold text-stone-900 dark:text-zinc-100 mt-0.5 block font-mono">
                     {readers.length}
                   </span>
                 </div>
+
+                <button
+                  type="button"
+                  onClick={() => setStatusFilter(statusFilter === 'pending_approval' ? 'all' : 'pending_approval')}
+                  className={`p-3 rounded-xl text-left border transition-all cursor-pointer ${
+                    readers.some((r) => r.isApproved === false)
+                      ? 'bg-amber-50 dark:bg-amber-950/30 border-amber-300 dark:border-amber-700/60 ring-1 ring-amber-400/20'
+                      : 'bg-stone-50 dark:bg-zinc-800/50 border-stone-200/50 dark:border-zinc-700/50'
+                  }`}
+                  title="Filtrar solicitações aguardando aprovação"
+                >
+                  <span className="text-[11px] font-medium text-amber-800 dark:text-amber-300 block">
+                    Pendentes de Aprovação
+                  </span>
+                  <span className="text-lg font-bold text-amber-800 dark:text-amber-300 mt-0.5 block font-mono">
+                    {readers.filter((r) => r.isApproved === false).length}
+                  </span>
+                </button>
 
                 <div className="p-3 rounded-xl bg-sky-50/60 dark:bg-sky-950/20 border border-sky-200/60 dark:border-sky-900/30">
                   <span className="text-[11px] font-medium text-sky-700 dark:text-sky-400 block">Cadastrados</span>
@@ -1758,7 +1811,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                 </div>
 
                 <div className="p-3 rounded-xl bg-violet-50/60 dark:bg-violet-950/20 border border-violet-200/60 dark:border-violet-900/30">
-                  <span className="text-[11px] font-medium text-violet-700 dark:text-violet-400 block">Aguardando Cadastro</span>
+                  <span className="text-[11px] font-medium text-violet-700 dark:text-violet-400 block">Aguardando Perfil</span>
                   <span className="text-lg font-bold text-violet-700 dark:text-violet-300 mt-0.5 block font-mono">
                     {readers.filter((r) => !r.hasProfile || !r.profile).length}
                   </span>
@@ -1767,14 +1820,14 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                 <div className="p-3 rounded-xl bg-emerald-50/50 dark:bg-emerald-950/20 border border-emerald-200/50 dark:border-emerald-900/30">
                   <span className="text-[11px] font-medium text-emerald-700 dark:text-emerald-400 block">Ativos</span>
                   <span className="text-lg font-bold text-emerald-700 dark:text-emerald-300 mt-0.5 block font-mono">
-                    {readers.filter((r) => r.status === 'active').length}
+                    {readers.filter((r) => r.status === 'active' && r.isApproved !== false).length}
                   </span>
                 </div>
 
-                <div className="p-3 rounded-xl bg-amber-50/50 dark:bg-amber-950/20 border border-amber-200/50 dark:border-amber-900/30">
-                  <span className="text-[11px] font-medium text-amber-700 dark:text-amber-400 block">Bloqueados / Revogados</span>
-                  <span className="text-lg font-bold text-amber-700 dark:text-amber-300 mt-0.5 block font-mono">
-                    {readers.filter((r) => r.status === 'blocked' || r.status === 'revoked').length}
+                <div className="p-3 rounded-xl bg-rose-50/50 dark:bg-rose-950/20 border border-rose-200/50 dark:border-rose-900/30">
+                  <span className="text-[11px] font-medium text-rose-700 dark:text-rose-400 block">Bloqueados / Revogados</span>
+                  <span className="text-lg font-bold text-rose-700 dark:text-rose-300 mt-0.5 block font-mono">
+                    {readers.filter((r) => r.isApproved !== false && (r.status === 'blocked' || r.status === 'revoked')).length}
                   </span>
                 </div>
               </div>
@@ -1849,6 +1902,114 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                 </div>
               </div>
             </div>
+
+            {/* Fila destacada de Leitores Pendentes de Aprovação (Auto-Cadastro) */}
+            {readers.some((r) => r.isApproved === false) && (
+              <div
+                className={`p-5 sm:p-6 rounded-2xl border transition-all ${
+                  isDark
+                    ? 'bg-amber-950/25 border-amber-700/50'
+                    : 'bg-amber-50/80 border-amber-300/90 shadow-xs'
+                }`}
+              >
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4">
+                  <div className="flex items-center gap-2.5">
+                    <div className="p-2 rounded-xl bg-amber-500/20 text-amber-700 dark:text-amber-300 shrink-0">
+                      <Clock className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h3 className="text-sm sm:text-base font-serif font-bold text-stone-900 dark:text-zinc-50">
+                        Leitores Aguardando Aprovação ({readers.filter((r) => r.isApproved === false).length})
+                      </h3>
+                      <p className="text-xs text-stone-600 dark:text-zinc-400">
+                        Novos leitores que preencheram o auto-cadastro e criaram senha. Libere com um único clique.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="space-y-2.5">
+                  {readers
+                    .filter((r) => r.isApproved === false)
+                    .map((pendingReader) => {
+                      const pEmail = pendingReader.email || pendingReader.profile?.email || '';
+                      const pPhone = pendingReader.profile?.phoneFormatted || '';
+                      const isApproving = approvingReaderId === pendingReader.id;
+
+                      return (
+                        <div
+                          key={pendingReader.id}
+                          className={`p-3.5 sm:p-4 rounded-xl border flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
+                            isDark
+                              ? 'bg-zinc-900/90 border-zinc-800'
+                              : 'bg-white border-amber-200/80 shadow-2xs'
+                          }`}
+                        >
+                          <div className="space-y-1">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="font-serif font-bold text-sm text-stone-900 dark:text-zinc-100">
+                                {pendingReader.profile?.fullName || pendingReader.name}
+                              </span>
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-100 text-amber-800 dark:bg-amber-950/70 dark:text-amber-300">
+                                <Clock className="w-3 h-3" />
+                                Pendente de Aprovação
+                              </span>
+                            </div>
+                            <div className="flex flex-wrap items-center gap-3 text-xs text-stone-600 dark:text-zinc-400">
+                              {pEmail && (
+                                <span className="inline-flex items-center gap-1">
+                                  <Mail className="w-3.5 h-3.5 opacity-70" />
+                                  {pEmail}
+                                </span>
+                              )}
+                              {pPhone && (
+                                <span className="inline-flex items-center gap-1 font-mono">
+                                  <Smartphone className="w-3.5 h-3.5 opacity-70" />
+                                  {pPhone}
+                                </span>
+                              )}
+                              <span className="text-[11px] opacity-80">
+                                Solicitado em {formatDate(pendingReader.createdAt)}
+                              </span>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-2 shrink-0">
+                            <button
+                              type="button"
+                              onClick={() => handleApproveReader(pendingReader)}
+                              disabled={isApproving}
+                              className="px-3.5 py-2 rounded-xl text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white transition-colors flex items-center gap-1.5 cursor-pointer shadow-xs disabled:opacity-60"
+                            >
+                              {isApproving ? (
+                                <>
+                                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                  <span>Aprovando...</span>
+                                </>
+                              ) : (
+                                <>
+                                  <Check className="w-3.5 h-3.5" />
+                                  <span>Aprovar / Liberar Acesso</span>
+                                </>
+                              )}
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteReader(pendingReader)}
+                              disabled={isApproving}
+                              className="p-2 rounded-xl text-stone-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors cursor-pointer"
+                              title="Recusar e excluir solicitação"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                </div>
+              </div>
+            )}
 
             {/* Formulário de Criação de Novo Acesso / PIN */}
             <div
@@ -2154,7 +2315,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                     />
                   </div>
 
-                  {/* Filtro por Estado do PIN */}
+                  {/* Filtro por Estado do Acesso */}
                   <select
                     value={statusFilter}
                     onChange={(e: any) => setStatusFilter(e.target.value)}
@@ -2165,6 +2326,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                     }`}
                   >
                     <option value="all">Todos os Estados</option>
+                    <option value="pending_approval">Pendentes de Aprovação</option>
                     <option value="active">Apenas Ativos</option>
                     <option value="blocked">Apenas Bloqueados</option>
                     <option value="revoked">Apenas Revogados</option>
@@ -2255,11 +2417,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                     <thead>
                       <tr className="border-b border-stone-200 dark:border-zinc-800 bg-stone-50/75 dark:bg-zinc-800/40 text-stone-500 dark:text-zinc-400 uppercase tracking-wider text-[10px]">
                         <th className="py-3 px-3.5">Nome Completo (Formatado)</th>
-                        <th className="py-3 px-3">WhatsApp / Celular</th>
+                        <th className="py-3 px-3">Contato (E-mail / WhatsApp)</th>
                         <th className="py-3 px-3">Nascimento</th>
                         <th className="py-3 px-3">Idade Calculada</th>
                         <th className="py-3 px-3">Sexo & Estado Civil</th>
-                        <th className="py-3 px-3">Status do PIN</th>
+                        <th className="py-3 px-3">Status do Acesso</th>
                         <th className="py-3 px-3">Livros & Capítulos</th>
                         <th className="py-3 px-3">Data de Cadastro</th>
                         <th className="py-3 px-3 text-right">Ações</th>
@@ -2271,15 +2433,20 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                           const q = searchTerm.trim().toLowerCase();
                           const fullNameMatch = r.profile?.fullName?.toLowerCase().includes(q);
                           const nameMatch = r.name.toLowerCase().includes(q);
+                          const emailMatch = (r.email || r.profile?.email || '').toLowerCase().includes(q);
                           const phoneMatch =
                             r.profile?.phone?.includes(q) ||
                             r.profile?.phoneFormatted?.includes(q);
                           const notesMatch = r.notes && r.notes.toLowerCase().includes(q);
                           const matchesSearch =
-                            !q || fullNameMatch || nameMatch || phoneMatch || notesMatch;
+                            !q || fullNameMatch || nameMatch || emailMatch || phoneMatch || notesMatch;
 
                           const matchesStatus =
-                            statusFilter === 'all' || r.status === statusFilter;
+                            statusFilter === 'all'
+                              ? true
+                              : statusFilter === 'pending_approval'
+                              ? r.isApproved === false
+                              : r.status === statusFilter && (statusFilter !== 'blocked' || r.isApproved !== false);
 
                           const matchesReg =
                             registrationFilter === 'all'
@@ -2337,30 +2504,38 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                                 )}
                               </td>
 
-                              {/* 2. WhatsApp / Celular */}
+                              {/* 2. E-mail e WhatsApp / Celular */}
                               <td className="py-3.5 px-3 whitespace-nowrap">
-                                {profile?.phoneFormatted ? (
-                                  <div className="flex items-center gap-1.5">
-                                    <span className="font-mono text-stone-800 dark:text-zinc-200 text-xs">
-                                      {profile.phoneFormatted}
+                                <div className="space-y-1">
+                                  {(reader.email || profile?.email) && (
+                                    <div className="flex items-center gap-1.5 text-[11px] text-stone-700 dark:text-zinc-300">
+                                      <Mail className="w-3 h-3 text-stone-400 shrink-0" />
+                                      <span>{reader.email || profile?.email}</span>
+                                    </div>
+                                  )}
+                                  {profile?.phoneFormatted ? (
+                                    <div className="flex items-center gap-1.5">
+                                      <span className="font-mono text-stone-800 dark:text-zinc-200 text-xs">
+                                        {profile.phoneFormatted}
+                                      </span>
+                                      {phoneDigits && (
+                                        <a
+                                          href={`https://wa.me/55${phoneDigits}`}
+                                          target="_blank"
+                                          rel="noopener noreferrer"
+                                          className="p-1 rounded-md text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950/50 transition-colors"
+                                          title={`Abrir conversa no WhatsApp com ${displayName}`}
+                                        >
+                                          <MessageCircle className="w-3.5 h-3.5" />
+                                        </a>
+                                      )}
+                                    </div>
+                                  ) : !(reader.email || profile?.email) ? (
+                                    <span className="text-stone-400 dark:text-zinc-500 italic text-[11px]">
+                                      Pendente
                                     </span>
-                                    {phoneDigits && (
-                                      <a
-                                        href={`https://wa.me/55${phoneDigits}`}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        className="p-1 rounded-md text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950/50 transition-colors"
-                                        title={`Abrir conversa no WhatsApp com ${displayName}`}
-                                      >
-                                        <MessageCircle className="w-3.5 h-3.5" />
-                                      </a>
-                                    )}
-                                  </div>
-                                ) : (
-                                  <span className="text-stone-400 dark:text-zinc-500 italic text-[11px]">
-                                    Pendente
-                                  </span>
-                                )}
+                                  ) : null}
+                                </div>
                               </td>
 
                               {/* 3. Data de Nascimento */}
@@ -2406,9 +2581,14 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                                 )}
                               </td>
 
-                              {/* 6. Status do PIN */}
+                              {/* 6. Status do Acesso */}
                               <td className="py-3.5 px-3 whitespace-nowrap">
-                                {reader.status === 'active' ? (
+                                {reader.isApproved === false ? (
+                                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-amber-100 text-amber-800 dark:bg-amber-950/70 dark:text-amber-300">
+                                    <Clock className="w-3 h-3" />
+                                    Pendente de Aprovação
+                                  </span>
+                                ) : reader.status === 'active' ? (
                                   isExpired ? (
                                     <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300">
                                       <Clock className="w-3 h-3" />
@@ -2494,8 +2674,23 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                                     <KeyRound className="w-4 h-4" />
                                   </button>
 
-                                  {/* Botão Bloquear / Desbloquear */}
-                                  {reader.status === 'active' ? (
+                                  {/* Botão Único-Clique: Aprovar / Liberar Acesso (para pendentes) ou Bloquear/Reativar */}
+                                  {reader.isApproved === false ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleApproveReader(reader)}
+                                      disabled={approvingReaderId === reader.id}
+                                      className="px-2.5 py-1.5 rounded-lg text-[11px] font-semibold bg-emerald-600 hover:bg-emerald-700 text-white transition-colors flex items-center gap-1 cursor-pointer shadow-2xs disabled:opacity-60"
+                                      title="Aprovar e liberar acesso com um clique"
+                                    >
+                                      {approvingReaderId === reader.id ? (
+                                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                      ) : (
+                                        <Check className="w-3.5 h-3.5" />
+                                      )}
+                                      <span>Aprovar / Liberar</span>
+                                    </button>
+                                  ) : reader.status === 'active' ? (
                                     <button
                                       type="button"
                                       onClick={() => handleUpdateReaderStatus(reader, 'blocked')}
@@ -2545,142 +2740,6 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                   </table>
                 </div>
               )}
-            </div>
-          </section>
-        )}
-
-        {/* =========================================================================
-            ABA 1: FUNCIONALIDADES DA BIBLIOTECA
-            ========================================================================= */}
-        {activeTab === 'features' && (
-          <section className="space-y-6 animate-in fade-in duration-200">
-            {/* Introdução da seção */}
-            <div
-              className={`p-5 sm:p-6 rounded-2xl border transition-all ${
-                isDark ? 'bg-zinc-900/80 border-zinc-800' : 'bg-white border-stone-200 shadow-xs'
-              }`}
-            >
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                <div>
-                  <div className="flex items-center gap-2.5 mb-1">
-                    <SlidersHorizontal className="w-5 h-5 text-amber-600 dark:text-amber-400" />
-                    <h2 className="text-base sm:text-lg font-serif font-bold text-stone-900 dark:text-zinc-50">
-                      Funcionalidades da Biblioteca
-                    </h2>
-                  </div>
-                  <p className="text-xs sm:text-sm text-stone-500 dark:text-zinc-400 font-serif max-w-2xl leading-relaxed">
-                    Controle de ativação e desativação independente de cada recurso para os leitores.
-                    Quando uma opção é desativada, seu acesso é ocultado de forma coerente sem apagar
-                    dados salvos.
-                  </p>
-                </div>
-
-                <div className="flex items-center gap-2 shrink-0">
-                  <button
-                    onClick={handleEnableAllFeatures}
-                    disabled={isSavingFeatures}
-                    className="px-3.5 py-2 rounded-xl text-xs font-semibold border border-stone-200 dark:border-zinc-700 text-stone-700 dark:text-zinc-200 hover:bg-stone-100 dark:hover:bg-zinc-800 transition-colors flex items-center gap-1.5 cursor-pointer"
-                  >
-                    <Check className="w-3.5 h-3.5" />
-                    Ativar Todas
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            {/* Grid dos 8 recursos administráveis */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {/* 1. Leitor literário */}
-              <FeatureCard
-                icon={<BookOpen className="w-5 h-5 text-indigo-500" />}
-                name="Leitor Literário"
-                description="Permite a leitura imersiva das obras e capítulos cadastrados na biblioteca digital."
-                enabled={features.literaryReader}
-                isDark={isDark}
-                isSaving={isSavingFeatures}
-                onToggle={() => handleToggleFeature('literaryReader')}
-                dependencyNotice="Se desativado, o acesso ao texto dos livros é temporariamente pausado."
-              />
-
-              {/* 2. Bíblia integrada */}
-              <FeatureCard
-                icon={<BookCheck className="w-5 h-5 text-amber-500" />}
-                name="Bíblia Integrada"
-                description="Acesso aos 66 livros da Bíblia Sagrada (BLIVRE) e abertura interativa de passagens bíblicas citadas."
-                enabled={features.integratedBible}
-                isDark={isDark}
-                isSaving={isSavingFeatures}
-                onToggle={() => handleToggleFeature('integratedBible')}
-                dependencyNotice="Se desativada, os botões e links de abertura da Bíblia são ocultados do leitor."
-              />
-
-              {/* 3. Perguntas para reflexão */}
-              <FeatureCard
-                icon={<HelpCircle className="w-5 h-5 text-emerald-500" />}
-                name="Perguntas para Reflexão"
-                description="Seção interativa de meditação ao término dos capítulos com salvamento de anotações pessoais do leitor."
-                enabled={features.reflectionQuestions}
-                isDark={isDark}
-                isSaving={isSavingFeatures}
-                onToggle={() => handleToggleFeature('reflectionQuestions')}
-                dependencyNotice="Respostas já salvas pelos leitores permanecem protegidas e não são apagadas."
-              />
-
-              {/* 4. Progresso e retomada da leitura */}
-              <FeatureCard
-                icon={<TrendingUp className="w-5 h-5 text-blue-500" />}
-                name="Progresso e Retomada de Leitura"
-                description="Barra de avanço percentual em tempo real no topo do capítulo e restauração da posição exata da rolagem."
-                enabled={features.readingProgress}
-                isDark={isDark}
-                isSaving={isSavingFeatures}
-                onToggle={() => handleToggleFeature('readingProgress')}
-              />
-
-              {/* 5. Marcadores e favoritos */}
-              <FeatureCard
-                icon={<Bookmark className="w-5 h-5 text-rose-500" />}
-                name="Marcadores e Favoritos"
-                description="Permite aos leitores marcar parágrafos favoritos e gerenciar passagens destacadas na barra de ferramentas."
-                enabled={features.bookmarks}
-                isDark={isDark}
-                isSaving={isSavingFeatures}
-                onToggle={() => handleToggleFeature('bookmarks')}
-                dependencyNotice="Os marcadores dos leitores continuam preservados no dispositivo ao desativar."
-              />
-
-              {/* 6. Pesquisa de conteúdo */}
-              <FeatureCard
-                icon={<Search className="w-5 h-5 text-cyan-500" />}
-                name="Pesquisa de Conteúdo"
-                description="Campo de busca rápida com contagem de ocorrências e destaque visual no corpo do capítulo."
-                enabled={features.search}
-                isDark={isDark}
-                isSaving={isSavingFeatures}
-                onToggle={() => handleToggleFeature('search')}
-              />
-
-              {/* 7. Áudio e velocidade de leitura */}
-              <FeatureCard
-                icon={<Volume2 className="w-5 h-5 text-violet-500" />}
-                name="Áudio e Velocidade de Leitura"
-                description="Narração do texto em voz alta com reprodução contínua e seletores de velocidade (0.75x a 1.75x)."
-                enabled={features.audioReading}
-                isDark={isDark}
-                isSaving={isSavingFeatures}
-                onToggle={() => handleToggleFeature('audioReading')}
-              />
-
-              {/* 8. Alternância entre tema claro e escuro */}
-              <FeatureCard
-                icon={<Palette className="w-5 h-5 text-amber-600" />}
-                name="Alternância entre Tema Claro e Escuro"
-                description="Seletor de temas (Papel, Creme, Sépia, Noturno) e escala tipográfica personalizável para o leitor."
-                enabled={features.themeToggle}
-                isDark={isDark}
-                isSaving={isSavingFeatures}
-                onToggle={() => handleToggleFeature('themeToggle')}
-              />
             </div>
           </section>
         )}
@@ -2986,508 +3045,6 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         )}
 
         {/* =========================================================================
-            ABA 3: SEGURANÇA E ACESSO
-            ========================================================================= */}
-        {activeTab === 'security' && (
-          <div className="space-y-6 animate-in fade-in duration-200">
-            {/* 1. STATUS GERAL DO SISTEMA */}
-            <div
-              className={`p-6 rounded-2xl border transition-all ${
-                isDark ? 'bg-zinc-900/80 border-zinc-800' : 'bg-white border-stone-200 shadow-xs'
-              }`}
-            >
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-stone-100 dark:border-zinc-800">
-                <div>
-                  <h2 className="text-base font-serif font-bold text-stone-900 dark:text-zinc-50 flex items-center gap-2">
-                    <HardDrive className="w-4 h-4 text-amber-600 dark:text-amber-400" />
-                    Estado do Sistema de Acesso
-                  </h2>
-                  <p className="text-xs text-stone-500 dark:text-zinc-400 font-sans mt-0.5">
-                    Persistência ativa em arquivo seguro (<code className="font-mono text-[11px]">security-config.json</code>)
-                  </p>
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <span
-                    className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold ${
-                      status?.isLibraryLocked
-                        ? 'bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300'
-                        : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300'
-                    }`}
-                  >
-                    <span
-                      className={`w-2 h-2 rounded-full ${
-                        status?.isLibraryLocked ? 'bg-rose-500 animate-ping' : 'bg-emerald-500'
-                      }`}
-                    />
-                    {status?.isLibraryLocked ? 'Acesso Bloqueado' : 'Acesso Liberado com PIN'}
-                  </span>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-4">
-                <div className="p-3.5 rounded-xl bg-stone-50 dark:bg-zinc-800/60 border border-stone-200/60 dark:border-zinc-700/60">
-                  <span className="text-[11px] font-medium text-stone-500 dark:text-zinc-400 block mb-1">
-                    Sessões Ativas de Leitores
-                  </span>
-                  <div className="flex items-center gap-2">
-                    <Users className="w-4 h-4 text-stone-600 dark:text-zinc-300" />
-                    <span className="text-lg font-bold text-stone-900 dark:text-zinc-100">
-                      {status?.activeReaderSessionsCount ?? 0}
-                    </span>
-                  </div>
-                </div>
-
-                <div className="p-3.5 rounded-xl bg-stone-50 dark:bg-zinc-800/60 border border-stone-200/60 dark:border-zinc-700/60">
-                  <span className="text-[11px] font-medium text-stone-500 dark:text-zinc-400 block mb-1">
-                    Última Alteração do PIN
-                  </span>
-                  <span className="text-xs font-medium text-stone-800 dark:text-zinc-200 block truncate">
-                    {formatDate(status?.lastPinChangedAt)}
-                  </span>
-                </div>
-
-                <div className="p-3.5 rounded-xl bg-stone-50 dark:bg-zinc-800/60 border border-stone-200/60 dark:border-zinc-700/60">
-                  <span className="text-[11px] font-medium text-stone-500 dark:text-zinc-400 block mb-1">
-                    Última Revogação Global
-                  </span>
-                  <span className="text-xs font-medium text-stone-800 dark:text-zinc-200 block truncate">
-                    {formatDate(status?.lastRevokedAt)}
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            {/* STATUS E CONFIGURAÇÃO DO BANCO DE DADOS FIREBASE CLOUD FIRESTORE */}
-            <div
-              className={`p-6 rounded-2xl border transition-all ${
-                isDark ? 'bg-zinc-900/80 border-zinc-800' : 'bg-white border-stone-200 shadow-xs'
-              }`}
-            >
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-stone-100 dark:border-zinc-800">
-                <div>
-                  <h2 className="text-base font-serif font-bold text-stone-900 dark:text-zinc-50 flex items-center gap-2">
-                    <Database className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-                    Persistência: Firebase Cloud Firestore
-                  </h2>
-                  <p className="text-xs text-stone-500 dark:text-zinc-400 font-sans mt-0.5">
-                    Banco de dados relacional e escalável em nuvem para sobrevivência a reinicializações e novas implantações.
-                  </p>
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <span
-                    className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold ${
-                      firebaseStatus?.isConnected
-                        ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300'
-                        : 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300'
-                    }`}
-                  >
-                    <span
-                      className={`w-2 h-2 rounded-full ${
-                        firebaseStatus?.isConnected ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'
-                      }`}
-                    />
-                    {firebaseStatus?.isConnected ? 'Conectado à Nuvem' : 'Contingência Local'}
-                  </span>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5 mt-4">
-                <div className="p-3.5 rounded-xl bg-stone-50 dark:bg-zinc-800/60 border border-stone-200/60 dark:border-zinc-700/60">
-                  <span className="text-[11px] font-medium text-stone-500 dark:text-zinc-400 block mb-1">
-                    Projeto Firebase
-                  </span>
-                  <span className="text-xs font-mono font-semibold text-stone-900 dark:text-zinc-100 block truncate">
-                    {firebaseStatus?.projectId || 'Não configurado'}
-                  </span>
-                </div>
-
-                <div className="p-3.5 rounded-xl bg-stone-50 dark:bg-zinc-800/60 border border-stone-200/60 dark:border-zinc-700/60">
-                  <span className="text-[11px] font-medium text-stone-500 dark:text-zinc-400 block mb-1">
-                    ID do Banco de Dados
-                  </span>
-                  <span className="text-xs font-mono font-semibold text-stone-900 dark:text-zinc-100 block truncate">
-                    {firebaseStatus?.databaseId || '(default)'}
-                  </span>
-                </div>
-
-                <div className="p-3.5 rounded-xl bg-stone-50 dark:bg-zinc-800/60 border border-stone-200/60 dark:border-zinc-700/60">
-                  <span className="text-[11px] font-medium text-stone-500 dark:text-zinc-400 block mb-1">
-                    Cópia de Backup Local
-                  </span>
-                  <span className="text-xs font-medium text-emerald-700 dark:text-emerald-400 flex items-center gap-1">
-                    <CheckCircle2 className="w-3.5 h-3.5" />
-                    Ativa (<code className="font-mono text-[10px]">security-config.backup.json</code>)
-                  </span>
-                </div>
-              </div>
-
-              <div className="mt-4 pt-4 border-t border-stone-100 dark:border-zinc-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-stone-500 dark:text-zinc-400">
-                <div className="flex items-center gap-2">
-                  <Info className="w-4 h-4 shrink-0 text-amber-600 dark:text-amber-400" />
-                  <span>
-                    Coleções sincronizadas: <strong className="text-stone-800 dark:text-zinc-200">/reader_accesses</strong> (acessos e cadastros de leitores) e <strong className="text-stone-800 dark:text-zinc-200">/system_config</strong> (travas e parâmetros).
-                  </span>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={handleMigrateFirebase}
-                  disabled={isMigratingFirebase}
-                  className="px-3.5 py-2 rounded-xl text-xs font-semibold bg-stone-900 dark:bg-zinc-100 text-stone-50 dark:text-zinc-900 hover:bg-stone-800 dark:hover:bg-white transition-colors flex items-center justify-center gap-2 cursor-pointer shrink-0 disabled:opacity-50"
-                >
-                  <RefreshCw className={`w-3.5 h-3.5 ${isMigratingFirebase ? 'animate-spin' : ''}`} />
-                  <span>{isMigratingFirebase ? 'Sincronizando...' : 'Forçar Sincronização em Nuvem'}</span>
-                </button>
-              </div>
-            </div>
-
-            {/* 2. ALTERAÇÃO DE LOGIN E SENHA DO ADMINISTRADOR */}
-            <div
-              className={`p-6 rounded-2xl border transition-all ${
-                isDark ? 'bg-zinc-900/80 border-zinc-800' : 'bg-white border-stone-200 shadow-xs'
-              }`}
-            >
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-stone-100 dark:border-zinc-800">
-                <div>
-                  <div className="flex items-center gap-2 mb-1">
-                    <ShieldCheck className="w-5 h-5 text-amber-600 dark:text-amber-400" />
-                    <h2 className="text-base font-serif font-bold text-stone-900 dark:text-zinc-50">
-                      Alterar Login e Senha do Administrador
-                    </h2>
-                  </div>
-                  <p className="text-xs text-stone-500 dark:text-zinc-400 font-sans">
-                    Defina um novo nome de usuário (login) ou uma nova senha para acessar o painel administrativo.
-                  </p>
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <span className="text-xs font-sans text-stone-500 dark:text-zinc-400">
-                    Login atual:
-                  </span>
-                  <span className="font-mono font-bold text-xs px-2.5 py-1 rounded-lg bg-stone-100 dark:bg-zinc-800 text-stone-800 dark:text-zinc-200 border border-stone-200 dark:border-zinc-700">
-                    {adminUsername || 'admin'}
-                  </span>
-                </div>
-              </div>
-
-              {credentialsSuccessMessage && (
-                <div className="mt-4 p-3.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-900/50 text-emerald-800 dark:text-emerald-300 text-xs font-sans flex items-center gap-2">
-                  <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
-                  <span>{credentialsSuccessMessage}</span>
-                </div>
-              )}
-
-              {credentialsErrorMessage && (
-                <div className="mt-4 p-3.5 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/50 text-rose-800 dark:text-rose-300 text-xs font-sans flex items-center gap-2">
-                  <AlertTriangle className="w-4 h-4 shrink-0 text-rose-600 dark:text-rose-400" />
-                  <span>{credentialsErrorMessage}</span>
-                </div>
-              )}
-
-              <form onSubmit={handleUpdateAdminCredentials} className="space-y-4 max-w-2xl mt-5">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  {/* Novo Nome de Usuário / Login */}
-                  <div>
-                    <label className="block text-xs font-medium text-stone-700 dark:text-zinc-300 mb-1.5 font-sans">
-                      Novo Nome de Usuário (Login)
-                    </label>
-                    <input
-                      type="text"
-                      autoComplete="username"
-                      value={newAdminUsernameInput}
-                      onChange={(e) => {
-                        setNewAdminUsernameInput(e.target.value);
-                        setCredentialsErrorMessage(null);
-                      }}
-                      className={`w-full px-3.5 py-2.5 rounded-xl text-sm border font-sans transition-colors outline-hidden focus:ring-2 focus:ring-amber-500/40 ${
-                        isDark
-                          ? 'bg-zinc-800 border-zinc-700 text-zinc-100 focus:border-amber-400'
-                          : 'bg-stone-50 border-stone-300 text-stone-900 focus:border-stone-500'
-                      }`}
-                    />
-                    <span className="text-[10px] text-stone-500 dark:text-zinc-400 mt-1 block">
-                      Deixe em branco caso queira manter o login atual ({adminUsername || 'admin'}).
-                    </span>
-                  </div>
-
-                  {/* Senha Atual */}
-                  <div>
-                    <label className="block text-xs font-medium text-stone-700 dark:text-zinc-300 mb-1.5 font-sans">
-                      Senha Atual <span className="text-rose-500">*</span>
-                    </label>
-                    <div className="relative">
-                      <input
-                        type={showAdminPassToggle ? 'text' : 'password'}
-                        autoComplete="current-password"
-                        required
-                        value={currentAdminPasswordInput}
-                        onChange={(e) => {
-                          setCurrentAdminPasswordInput(e.target.value);
-                          setCredentialsErrorMessage(null);
-                        }}
-                        className={`w-full pl-3.5 pr-10 py-2.5 rounded-xl text-sm border font-sans transition-colors outline-hidden focus:ring-2 focus:ring-amber-500/40 ${
-                          isDark
-                            ? 'bg-zinc-800 border-zinc-700 text-zinc-100 focus:border-amber-400'
-                            : 'bg-stone-50 border-stone-300 text-stone-900 focus:border-stone-500'
-                        }`}
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setShowAdminPassToggle(!showAdminPassToggle)}
-                        tabIndex={-1}
-                        className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 text-stone-400 hover:text-stone-600 dark:hover:text-zinc-200 transition-colors cursor-pointer"
-                        aria-label={showAdminPassToggle ? 'Ocultar senhas' : 'Exibir senhas'}
-                      >
-                        {showAdminPassToggle ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                      </button>
-                    </div>
-                    <span className="text-[10px] text-stone-500 dark:text-zinc-400 mt-1 block">
-                      Obrigatória para confirmar a alteração de segurança.
-                    </span>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1">
-                  {/* Nova Senha */}
-                  <div>
-                    <label className="block text-xs font-medium text-stone-700 dark:text-zinc-300 mb-1.5 font-sans">
-                      Nova Senha Administrativa
-                    </label>
-                    <input
-                      type={showAdminPassToggle ? 'text' : 'password'}
-                      autoComplete="new-password"
-                      value={newAdminPasswordInput}
-                      onChange={(e) => {
-                        setNewAdminPasswordInput(e.target.value);
-                        setCredentialsErrorMessage(null);
-                      }}
-                      className={`w-full px-3.5 py-2.5 rounded-xl text-sm border font-sans transition-colors outline-hidden focus:ring-2 focus:ring-amber-500/40 ${
-                        isDark
-                          ? 'bg-zinc-800 border-zinc-700 text-zinc-100 focus:border-amber-400'
-                          : 'bg-stone-50 border-stone-300 text-stone-900 focus:border-stone-500'
-                      }`}
-                    />
-                    <span className="text-[10px] text-stone-500 dark:text-zinc-400 mt-1 block">
-                      Mínimo de 6 caracteres. Deixe em branco se for alterar apenas o login.
-                    </span>
-                  </div>
-
-                  {/* Confirmar Nova Senha */}
-                  <div>
-                    <label className="block text-xs font-medium text-stone-700 dark:text-zinc-300 mb-1.5 font-sans">
-                      Confirmar Nova Senha
-                    </label>
-                    <input
-                      type={showAdminPassToggle ? 'text' : 'password'}
-                      autoComplete="new-password"
-                      value={confirmAdminPasswordInput}
-                      onChange={(e) => {
-                        setConfirmAdminPasswordInput(e.target.value);
-                        setCredentialsErrorMessage(null);
-                      }}
-                      className={`w-full px-3.5 py-2.5 rounded-xl text-sm border font-sans transition-colors outline-hidden focus:ring-2 focus:ring-amber-500/40 ${
-                        isDark
-                          ? 'bg-zinc-800 border-zinc-700 text-zinc-100 focus:border-amber-400'
-                          : 'bg-stone-50 border-stone-300 text-stone-900 focus:border-stone-500'
-                      }`}
-                    />
-                  </div>
-                </div>
-
-                <div className="pt-2">
-                  <button
-                    type="submit"
-                    disabled={isUpdatingCredentials || !currentAdminPasswordInput.trim()}
-                    className="px-5 py-2.5 rounded-xl bg-stone-900 hover:bg-stone-800 dark:bg-amber-500 dark:hover:bg-amber-400 text-stone-50 dark:text-zinc-950 text-xs font-semibold transition-all shadow-xs disabled:opacity-50 flex items-center gap-2 cursor-pointer"
-                  >
-                    {isUpdatingCredentials ? (
-                      <>
-                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                        <span>Salvando Credenciais...</span>
-                      </>
-                    ) : (
-                      <>
-                        <Check className="w-3.5 h-3.5" />
-                        <span>Salvar Novas Credenciais</span>
-                      </>
-                    )}
-                  </button>
-                </div>
-              </form>
-            </div>
-
-            {/* 3. ALTERAÇÃO DO PIN DOS LEITORES */}
-            <div
-              className={`p-6 rounded-2xl border transition-all ${
-                isDark ? 'bg-zinc-900/80 border-zinc-800' : 'bg-white border-stone-200 shadow-xs'
-              }`}
-            >
-              <div className="flex items-center gap-2 mb-2">
-                <KeyRound className="w-5 h-5 text-amber-600 dark:text-amber-400" />
-                <h2 className="text-base font-serif font-bold text-stone-900 dark:text-zinc-50">
-                  Alterar PIN Compartilhado dos Leitores
-                </h2>
-              </div>
-              <p className="text-xs text-stone-500 dark:text-zinc-400 font-serif leading-relaxed mb-5">
-                Defina um novo PIN para o grupo de leitores. A nova senha será salva de forma persistente com criptografia PBKDF2 e salt único.
-              </p>
-
-              <form onSubmit={handleRequestPinChange} className="space-y-4 max-w-lg">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-xs font-medium text-stone-700 dark:text-zinc-300 mb-1.5">
-                      Novo PIN
-                    </label>
-                    <div className="relative">
-                      <input
-                        type={showNewPin ? 'text' : 'password'}
-                        value={newPin}
-                        onChange={(e) => setNewPin(e.target.value)}
-                        required
-                        className={`w-full pl-3.5 pr-10 py-2.5 rounded-xl text-sm border font-mono tracking-wider transition-colors outline-hidden focus:ring-2 focus:ring-amber-500/40 ${
-                          isDark
-                            ? 'bg-zinc-800 border-zinc-700 text-zinc-100 focus:border-amber-400'
-                            : 'bg-stone-50 border-stone-300 text-stone-900 focus:border-stone-500'
-                        }`}
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setShowNewPin(!showNewPin)}
-                        tabIndex={-1}
-                        className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 text-stone-400 hover:text-stone-600 dark:hover:text-zinc-200 transition-colors cursor-pointer"
-                        aria-label={showNewPin ? 'Ocultar PIN' : 'Exibir PIN'}
-                      >
-                        {showNewPin ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                      </button>
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-medium text-stone-700 dark:text-zinc-300 mb-1.5">
-                      Confirmar Novo PIN
-                    </label>
-                    <input
-                      type={showNewPin ? 'text' : 'password'}
-                      value={confirmPin}
-                      onChange={(e) => setConfirmPin(e.target.value)}
-                      required
-                      className={`w-full px-3.5 py-2.5 rounded-xl text-sm border font-mono tracking-wider transition-colors outline-hidden focus:ring-2 focus:ring-amber-500/40 ${
-                        isDark
-                          ? 'bg-zinc-800 border-zinc-700 text-zinc-100 focus:border-amber-400'
-                          : 'bg-stone-50 border-stone-300 text-stone-900 focus:border-stone-500'
-                      }`}
-                    />
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-2.5 pt-1">
-                  <input
-                    type="checkbox"
-                    id="revokeOnPinChange"
-                    checked={revokeOnPinChange}
-                    onChange={(e) => setRevokeOnPinChange(e.target.checked)}
-                    className="w-4 h-4 rounded-md accent-amber-500 text-amber-500 cursor-pointer"
-                  />
-                  <label
-                    htmlFor="revokeOnPinChange"
-                    className="text-xs text-stone-600 dark:text-zinc-300 font-sans cursor-pointer select-none"
-                  >
-                    Desconectar todas as sessões existentes imediatamente (exigir o novo PIN agora)
-                  </label>
-                </div>
-
-                <button
-                  type="submit"
-                  disabled={isUpdatingPin || !newPin.trim() || !confirmPin.trim()}
-                  className="px-4 py-2.5 rounded-xl bg-stone-900 hover:bg-stone-800 dark:bg-amber-500 dark:hover:bg-amber-400 text-stone-50 dark:text-zinc-950 text-xs font-semibold transition-all shadow-xs disabled:opacity-50 flex items-center gap-2 cursor-pointer"
-                >
-                  {isUpdatingPin ? (
-                    <>
-                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                      <span>Salvando Novo PIN...</span>
-                    </>
-                  ) : (
-                    <>
-                      <Check className="w-3.5 h-3.5" />
-                      <span>Salvar e Aplicar Novo PIN</span>
-                    </>
-                  )}
-                </button>
-              </form>
-            </div>
-
-            {/* 3. BLOQUEIO TEMPORÁRIO E REVOGAÇÃO GLOBAL */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {/* Controle de Bloqueio Geral */}
-              <div
-                className={`p-5 rounded-2xl border transition-all ${
-                  isDark ? 'bg-zinc-900/80 border-zinc-800' : 'bg-white border-stone-200 shadow-xs'
-                }`}
-              >
-                <div className="flex items-center gap-2 mb-2">
-                  {status?.isLibraryLocked ? (
-                    <Lock className="w-5 h-5 text-rose-500" />
-                  ) : (
-                    <Unlock className="w-5 h-5 text-emerald-500" />
-                  )}
-                  <h3 className="text-sm font-serif font-bold text-stone-900 dark:text-zinc-50">
-                    Acesso Geral à Biblioteca
-                  </h3>
-                </div>
-                <p className="text-xs text-stone-500 dark:text-zinc-400 font-serif leading-relaxed mb-4">
-                  Bloqueie instantaneamente novos acessos de leitores sem alterar o PIN. Útil durante manutenções ou pausas no teste.
-                </p>
-
-                {status?.isLibraryLocked ? (
-                  <button
-                    onClick={() => handleToggleLock(false)}
-                    className="w-full py-2.5 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold transition-colors flex items-center justify-center gap-2 cursor-pointer shadow-xs"
-                  >
-                    <Unlock className="w-3.5 h-3.5" />
-                    <span>Liberar Acessos à Biblioteca</span>
-                  </button>
-                ) : (
-                  <button
-                    onClick={() => handleToggleLock(true)}
-                    className="w-full py-2.5 px-3 rounded-xl border border-rose-300 dark:border-rose-900 text-rose-700 dark:text-rose-300 hover:bg-rose-50 dark:hover:bg-rose-950/40 text-xs font-semibold transition-colors flex items-center justify-center gap-2 cursor-pointer"
-                  >
-                    <Lock className="w-3.5 h-3.5" />
-                    <span>Bloquear Temporariamente Novos Acessos</span>
-                  </button>
-                )}
-              </div>
-
-              {/* Controle de Revogação de Sessões */}
-              <div
-                className={`p-5 rounded-2xl border transition-all ${
-                  isDark ? 'bg-zinc-900/80 border-zinc-800' : 'bg-white border-stone-200 shadow-xs'
-                }`}
-              >
-                <div className="flex items-center gap-2 mb-2">
-                  <ShieldAlert className="w-5 h-5 text-amber-500" />
-                  <h3 className="text-sm font-serif font-bold text-stone-900 dark:text-zinc-50">
-                    Revogação Global de Sessões
-                  </h3>
-                </div>
-                <p className="text-xs text-stone-500 dark:text-zinc-400 font-serif leading-relaxed mb-4">
-                  Invalida todos os tokens ativos no servidor. Todos os leitores atualmente conectados serão obrigados a digitar o PIN novamente.
-                </p>
-
-                <button
-                  onClick={handleRevokeAllSessions}
-                  className="w-full py-2.5 px-3 rounded-xl border border-stone-200 dark:border-zinc-700 text-stone-700 dark:text-zinc-200 hover:bg-stone-100 dark:hover:bg-zinc-800 text-xs font-semibold transition-colors flex items-center justify-center gap-2 cursor-pointer"
-                >
-                  <Users className="w-3.5 h-3.5" />
-                  <span>Desconectar Todos os Leitores Agora</span>
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* =========================================================================
             ABA: ALTERAÇÃO DE LOGIN E SENHA DO ADMINISTRADOR
             ========================================================================= */}
         {activeTab === 'credentials' && (
@@ -3691,14 +3248,473 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                 </li>
               </ul>
             </div>
+          
+{/* =========================================================================
+            ABA 3: SEGURANÇA E ACESSO
+            ========================================================================= */}
+        
+            {/* 1. STATUS GERAL DO SISTEMA */}
+            <div
+              className={`p-6 rounded-2xl border transition-all ${
+                isDark ? 'bg-zinc-900/80 border-zinc-800' : 'bg-white border-stone-200 shadow-xs'
+              }`}
+            >
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-stone-100 dark:border-zinc-800">
+                <div>
+                  <h2 className="text-base font-serif font-bold text-stone-900 dark:text-zinc-50 flex items-center gap-2">
+                    <HardDrive className="w-4 h-4 text-amber-600 dark:text-amber-400" />
+                    Estado do Sistema de Acesso
+                  </h2>
+                  <p className="text-xs text-stone-500 dark:text-zinc-400 font-sans mt-0.5">
+                    Persistência ativa em arquivo seguro (<code className="font-mono text-[11px]">security-config.json</code>)
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <span
+                    className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold ${
+                      status?.isLibraryLocked
+                        ? 'bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300'
+                        : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300'
+                    }`}
+                  >
+                    <span
+                      className={`w-2 h-2 rounded-full ${
+                        status?.isLibraryLocked ? 'bg-rose-500 animate-ping' : 'bg-emerald-500'
+                      }`}
+                    />
+                    {status?.isLibraryLocked ? 'Acesso Bloqueado' : 'Acesso Liberado com PIN'}
+                  </span>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-4">
+                <div className="p-3.5 rounded-xl bg-stone-50 dark:bg-zinc-800/60 border border-stone-200/60 dark:border-zinc-700/60">
+                  <span className="text-[11px] font-medium text-stone-500 dark:text-zinc-400 block mb-1">
+                    Sessões Ativas de Leitores
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <Users className="w-4 h-4 text-stone-600 dark:text-zinc-300" />
+                    <span className="text-lg font-bold text-stone-900 dark:text-zinc-100">
+                      {status?.activeReaderSessionsCount ?? 0}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="p-3.5 rounded-xl bg-stone-50 dark:bg-zinc-800/60 border border-stone-200/60 dark:border-zinc-700/60">
+                  <span className="text-[11px] font-medium text-stone-500 dark:text-zinc-400 block mb-1">
+                    Última Alteração do PIN
+                  </span>
+                  <span className="text-xs font-medium text-stone-800 dark:text-zinc-200 block truncate">
+                    {formatDate(status?.lastPinChangedAt)}
+                  </span>
+                </div>
+
+                <div className="p-3.5 rounded-xl bg-stone-50 dark:bg-zinc-800/60 border border-stone-200/60 dark:border-zinc-700/60">
+                  <span className="text-[11px] font-medium text-stone-500 dark:text-zinc-400 block mb-1">
+                    Última Revogação Global
+                  </span>
+                  <span className="text-xs font-medium text-stone-800 dark:text-zinc-200 block truncate">
+                    {formatDate(status?.lastRevokedAt)}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* STATUS E CONFIGURAÇÃO DO BANCO DE DADOS FIREBASE CLOUD FIRESTORE */}
+            <div
+              className={`p-6 rounded-2xl border transition-all ${
+                isDark ? 'bg-zinc-900/80 border-zinc-800' : 'bg-white border-stone-200 shadow-xs'
+              }`}
+            >
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-stone-100 dark:border-zinc-800">
+                <div>
+                  <h2 className="text-base font-serif font-bold text-stone-900 dark:text-zinc-50 flex items-center gap-2">
+                    <Database className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                    Persistência: Firebase Cloud Firestore
+                  </h2>
+                  <p className="text-xs text-stone-500 dark:text-zinc-400 font-sans mt-0.5">
+                    Banco de dados relacional e escalável em nuvem para sobrevivência a reinicializações e novas implantações.
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <span
+                    className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold ${
+                      firebaseStatus?.isConnected
+                        ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300'
+                        : 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300'
+                    }`}
+                  >
+                    <span
+                      className={`w-2 h-2 rounded-full ${
+                        firebaseStatus?.isConnected ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'
+                      }`}
+                    />
+                    {firebaseStatus?.isConnected ? 'Conectado à Nuvem' : 'Contingência Local'}
+                  </span>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5 mt-4">
+                <div className="p-3.5 rounded-xl bg-stone-50 dark:bg-zinc-800/60 border border-stone-200/60 dark:border-zinc-700/60">
+                  <span className="text-[11px] font-medium text-stone-500 dark:text-zinc-400 block mb-1">
+                    Projeto Firebase
+                  </span>
+                  <span className="text-xs font-mono font-semibold text-stone-900 dark:text-zinc-100 block truncate">
+                    {firebaseStatus?.projectId || 'Não configurado'}
+                  </span>
+                </div>
+
+                <div className="p-3.5 rounded-xl bg-stone-50 dark:bg-zinc-800/60 border border-stone-200/60 dark:border-zinc-700/60">
+                  <span className="text-[11px] font-medium text-stone-500 dark:text-zinc-400 block mb-1">
+                    ID do Banco de Dados
+                  </span>
+                  <span className="text-xs font-mono font-semibold text-stone-900 dark:text-zinc-100 block truncate">
+                    {firebaseStatus?.databaseId || '(default)'}
+                  </span>
+                </div>
+
+                <div className="p-3.5 rounded-xl bg-stone-50 dark:bg-zinc-800/60 border border-stone-200/60 dark:border-zinc-700/60">
+                  <span className="text-[11px] font-medium text-stone-500 dark:text-zinc-400 block mb-1">
+                    Cópia de Backup Local
+                  </span>
+                  <span className="text-xs font-medium text-emerald-700 dark:text-emerald-400 flex items-center gap-1">
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    Ativa (<code className="font-mono text-[10px]">security-config.backup.json</code>)
+                  </span>
+                </div>
+              </div>
+
+              <div className="mt-4 pt-4 border-t border-stone-100 dark:border-zinc-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-stone-500 dark:text-zinc-400">
+                <div className="flex items-center gap-2">
+                  <Info className="w-4 h-4 shrink-0 text-amber-600 dark:text-amber-400" />
+                  <span>
+                    Coleções sincronizadas: <strong className="text-stone-800 dark:text-zinc-200">/reader_accesses</strong> (acessos e cadastros de leitores) e <strong className="text-stone-800 dark:text-zinc-200">/system_config</strong> (travas e parâmetros).
+                  </span>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleMigrateFirebase}
+                  disabled={isMigratingFirebase}
+                  className="px-3.5 py-2 rounded-xl text-xs font-semibold bg-stone-900 dark:bg-zinc-100 text-stone-50 dark:text-zinc-900 hover:bg-stone-800 dark:hover:bg-white transition-colors flex items-center justify-center gap-2 cursor-pointer shrink-0 disabled:opacity-50"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${isMigratingFirebase ? 'animate-spin' : ''}`} />
+                  <span>{isMigratingFirebase ? 'Sincronizando...' : 'Forçar Sincronização em Nuvem'}</span>
+                </button>
+              </div>
+            </div>
+
+            
+{/* 3. ALTERAÇÃO DO PIN DOS LEITORES */}
+            <div
+              className={`p-6 rounded-2xl border transition-all ${
+                isDark ? 'bg-zinc-900/80 border-zinc-800' : 'bg-white border-stone-200 shadow-xs'
+              }`}
+            >
+              <div className="flex items-center gap-2 mb-2">
+                <KeyRound className="w-5 h-5 text-amber-600 dark:text-amber-400" />
+                <h2 className="text-base font-serif font-bold text-stone-900 dark:text-zinc-50">
+                  Alterar PIN Compartilhado dos Leitores
+                </h2>
+              </div>
+              <p className="text-xs text-stone-500 dark:text-zinc-400 font-serif leading-relaxed mb-5">
+                Defina um novo PIN para o grupo de leitores. A nova senha será salva de forma persistente com criptografia PBKDF2 e salt único.
+              </p>
+
+              <form onSubmit={handleRequestPinChange} className="space-y-4 max-w-lg">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-medium text-stone-700 dark:text-zinc-300 mb-1.5">
+                      Novo PIN
+                    </label>
+                    <div className="relative">
+                      <input
+                        type={showNewPin ? 'text' : 'password'}
+                        value={newPin}
+                        onChange={(e) => setNewPin(e.target.value)}
+                        required
+                        className={`w-full pl-3.5 pr-10 py-2.5 rounded-xl text-sm border font-mono tracking-wider transition-colors outline-hidden focus:ring-2 focus:ring-amber-500/40 ${
+                          isDark
+                            ? 'bg-zinc-800 border-zinc-700 text-zinc-100 focus:border-amber-400'
+                            : 'bg-stone-50 border-stone-300 text-stone-900 focus:border-stone-500'
+                        }`}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowNewPin(!showNewPin)}
+                        tabIndex={-1}
+                        className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 text-stone-400 hover:text-stone-600 dark:hover:text-zinc-200 transition-colors cursor-pointer"
+                        aria-label={showNewPin ? 'Ocultar PIN' : 'Exibir PIN'}
+                      >
+                        {showNewPin ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-medium text-stone-700 dark:text-zinc-300 mb-1.5">
+                      Confirmar Novo PIN
+                    </label>
+                    <input
+                      type={showNewPin ? 'text' : 'password'}
+                      value={confirmPin}
+                      onChange={(e) => setConfirmPin(e.target.value)}
+                      required
+                      className={`w-full px-3.5 py-2.5 rounded-xl text-sm border font-mono tracking-wider transition-colors outline-hidden focus:ring-2 focus:ring-amber-500/40 ${
+                        isDark
+                          ? 'bg-zinc-800 border-zinc-700 text-zinc-100 focus:border-amber-400'
+                          : 'bg-stone-50 border-stone-300 text-stone-900 focus:border-stone-500'
+                      }`}
+                    />
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2.5 pt-1">
+                  <input
+                    type="checkbox"
+                    id="revokeOnPinChange"
+                    checked={revokeOnPinChange}
+                    onChange={(e) => setRevokeOnPinChange(e.target.checked)}
+                    className="w-4 h-4 rounded-md accent-amber-500 text-amber-500 cursor-pointer"
+                  />
+                  <label
+                    htmlFor="revokeOnPinChange"
+                    className="text-xs text-stone-600 dark:text-zinc-300 font-sans cursor-pointer select-none"
+                  >
+                    Desconectar todas as sessões existentes imediatamente (exigir o novo PIN agora)
+                  </label>
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={isUpdatingPin || !newPin.trim() || !confirmPin.trim()}
+                  className="px-4 py-2.5 rounded-xl bg-stone-900 hover:bg-stone-800 dark:bg-amber-500 dark:hover:bg-amber-400 text-stone-50 dark:text-zinc-950 text-xs font-semibold transition-all shadow-xs disabled:opacity-50 flex items-center gap-2 cursor-pointer"
+                >
+                  {isUpdatingPin ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      <span>Salvando Novo PIN...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Check className="w-3.5 h-3.5" />
+                      <span>Salvar e Aplicar Novo PIN</span>
+                    </>
+                  )}
+                </button>
+              </form>
+            </div>
+
+            {/* 3. BLOQUEIO TEMPORÁRIO E REVOGAÇÃO GLOBAL */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {/* Controle de Bloqueio Geral */}
+              <div
+                className={`p-5 rounded-2xl border transition-all ${
+                  isDark ? 'bg-zinc-900/80 border-zinc-800' : 'bg-white border-stone-200 shadow-xs'
+                }`}
+              >
+                <div className="flex items-center gap-2 mb-2">
+                  {status?.isLibraryLocked ? (
+                    <Lock className="w-5 h-5 text-rose-500" />
+                  ) : (
+                    <Unlock className="w-5 h-5 text-emerald-500" />
+                  )}
+                  <h3 className="text-sm font-serif font-bold text-stone-900 dark:text-zinc-50">
+                    Acesso Geral à Biblioteca
+                  </h3>
+                </div>
+                <p className="text-xs text-stone-500 dark:text-zinc-400 font-serif leading-relaxed mb-4">
+                  Bloqueie instantaneamente novos acessos de leitores sem alterar o PIN. Útil durante manutenções ou pausas no teste.
+                </p>
+
+                {status?.isLibraryLocked ? (
+                  <button
+                    onClick={() => handleToggleLock(false)}
+                    className="w-full py-2.5 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold transition-colors flex items-center justify-center gap-2 cursor-pointer shadow-xs"
+                  >
+                    <Unlock className="w-3.5 h-3.5" />
+                    <span>Liberar Acessos à Biblioteca</span>
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => handleToggleLock(true)}
+                    className="w-full py-2.5 px-3 rounded-xl border border-rose-300 dark:border-rose-900 text-rose-700 dark:text-rose-300 hover:bg-rose-50 dark:hover:bg-rose-950/40 text-xs font-semibold transition-colors flex items-center justify-center gap-2 cursor-pointer"
+                  >
+                    <Lock className="w-3.5 h-3.5" />
+                    <span>Bloquear Temporariamente Novos Acessos</span>
+                  </button>
+                )}
+              </div>
+
+              {/* Controle de Revogação de Sessões */}
+              <div
+                className={`p-5 rounded-2xl border transition-all ${
+                  isDark ? 'bg-zinc-900/80 border-zinc-800' : 'bg-white border-stone-200 shadow-xs'
+                }`}
+              >
+                <div className="flex items-center gap-2 mb-2">
+                  <ShieldAlert className="w-5 h-5 text-amber-500" />
+                  <h3 className="text-sm font-serif font-bold text-stone-900 dark:text-zinc-50">
+                    Revogação Global de Sessões
+                  </h3>
+                </div>
+                <p className="text-xs text-stone-500 dark:text-zinc-400 font-serif leading-relaxed mb-4">
+                  Invalida todos os tokens ativos no servidor. Todos os leitores atualmente conectados serão obrigados a digitar o PIN novamente.
+                </p>
+
+                <button
+                  onClick={handleRevokeAllSessions}
+                  className="w-full py-2.5 px-3 rounded-xl border border-stone-200 dark:border-zinc-700 text-stone-700 dark:text-zinc-200 hover:bg-stone-100 dark:hover:bg-zinc-800 text-xs font-semibold transition-colors flex items-center justify-center gap-2 cursor-pointer"
+                >
+                  <Users className="w-3.5 h-3.5" />
+                  <span>Desconectar Todos os Leitores Agora</span>
+                </button>
+              </div>
+            </div>
+          
           </section>
         )}
 
-        {/* =========================================================================
+{/* =========================================================================
+            ABA 1: FUNCIONALIDADES DA BIBLIOTECA
+            ========================================================================= */}
+        {activeTab === 'features' && (
+          <section className="space-y-6 animate-in fade-in duration-200">
+            {/* Introdução da seção */}
+            <div
+              className={`p-5 sm:p-6 rounded-2xl border transition-all ${
+                isDark ? 'bg-zinc-900/80 border-zinc-800' : 'bg-white border-stone-200 shadow-xs'
+              }`}
+            >
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div>
+                  <div className="flex items-center gap-2.5 mb-1">
+                    <SlidersHorizontal className="w-5 h-5 text-amber-600 dark:text-amber-400" />
+                    <h2 className="text-base sm:text-lg font-serif font-bold text-stone-900 dark:text-zinc-50">
+                      Funcionalidades da Biblioteca
+                    </h2>
+                  </div>
+                  <p className="text-xs sm:text-sm text-stone-500 dark:text-zinc-400 font-serif max-w-2xl leading-relaxed">
+                    Controle de ativação e desativação independente de cada recurso para os leitores.
+                    Quando uma opção é desativada, seu acesso é ocultado de forma coerente sem apagar
+                    dados salvos.
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    onClick={handleEnableAllFeatures}
+                    disabled={isSavingFeatures}
+                    className="px-3.5 py-2 rounded-xl text-xs font-semibold border border-stone-200 dark:border-zinc-700 text-stone-700 dark:text-zinc-200 hover:bg-stone-100 dark:hover:bg-zinc-800 transition-colors flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <Check className="w-3.5 h-3.5" />
+                    Ativar Todas
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Grid dos 8 recursos administráveis */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* 1. Leitor literário */}
+              <FeatureCard
+                icon={<BookOpen className="w-5 h-5 text-indigo-500" />}
+                name="Leitor Literário"
+                description="Permite a leitura imersiva das obras e capítulos cadastrados na biblioteca digital."
+                enabled={features.literaryReader}
+                isDark={isDark}
+                isSaving={isSavingFeatures}
+                onToggle={() => handleToggleFeature('literaryReader')}
+                dependencyNotice="Se desativado, o acesso ao texto dos livros é temporariamente pausado."
+              />
+
+              {/* 2. Bíblia integrada */}
+              <FeatureCard
+                icon={<BookCheck className="w-5 h-5 text-amber-500" />}
+                name="Bíblia Integrada"
+                description="Acesso aos 66 livros da Bíblia Sagrada (BLIVRE) e abertura interativa de passagens bíblicas citadas."
+                enabled={features.integratedBible}
+                isDark={isDark}
+                isSaving={isSavingFeatures}
+                onToggle={() => handleToggleFeature('integratedBible')}
+                dependencyNotice="Se desativada, os botões e links de abertura da Bíblia são ocultados do leitor."
+              />
+
+              {/* 3. Perguntas para reflexão */}
+              <FeatureCard
+                icon={<HelpCircle className="w-5 h-5 text-emerald-500" />}
+                name="Perguntas para Reflexão"
+                description="Seção interativa de meditação ao término dos capítulos com salvamento de anotações pessoais do leitor."
+                enabled={features.reflectionQuestions}
+                isDark={isDark}
+                isSaving={isSavingFeatures}
+                onToggle={() => handleToggleFeature('reflectionQuestions')}
+                dependencyNotice="Respostas já salvas pelos leitores permanecem protegidas e não são apagadas."
+              />
+
+              {/* 4. Progresso e retomada da leitura */}
+              <FeatureCard
+                icon={<TrendingUp className="w-5 h-5 text-blue-500" />}
+                name="Progresso e Retomada de Leitura"
+                description="Barra de avanço percentual em tempo real no topo do capítulo e restauração da posição exata da rolagem."
+                enabled={features.readingProgress}
+                isDark={isDark}
+                isSaving={isSavingFeatures}
+                onToggle={() => handleToggleFeature('readingProgress')}
+              />
+
+              {/* 5. Marcadores e favoritos */}
+              <FeatureCard
+                icon={<Bookmark className="w-5 h-5 text-rose-500" />}
+                name="Marcadores e Favoritos"
+                description="Permite aos leitores marcar parágrafos favoritos e gerenciar passagens destacadas na barra de ferramentas."
+                enabled={features.bookmarks}
+                isDark={isDark}
+                isSaving={isSavingFeatures}
+                onToggle={() => handleToggleFeature('bookmarks')}
+                dependencyNotice="Os marcadores dos leitores continuam preservados no dispositivo ao desativar."
+              />
+
+              {/* 6. Pesquisa de conteúdo */}
+              <FeatureCard
+                icon={<Search className="w-5 h-5 text-cyan-500" />}
+                name="Pesquisa de Conteúdo"
+                description="Campo de busca rápida com contagem de ocorrências e destaque visual no corpo do capítulo."
+                enabled={features.search}
+                isDark={isDark}
+                isSaving={isSavingFeatures}
+                onToggle={() => handleToggleFeature('search')}
+              />
+
+              {/* 7. Áudio e velocidade de leitura */}
+              <FeatureCard
+                icon={<Volume2 className="w-5 h-5 text-violet-500" />}
+                name="Áudio e Velocidade de Leitura"
+                description="Narração do texto em voz alta com reprodução contínua e seletores de velocidade (0.75x a 1.75x)."
+                enabled={features.audioReading}
+                isDark={isDark}
+                isSaving={isSavingFeatures}
+                onToggle={() => handleToggleFeature('audioReading')}
+              />
+
+              {/* 8. Alternância entre tema claro e escuro */}
+              <FeatureCard
+                icon={<Palette className="w-5 h-5 text-amber-600" />}
+                name="Alternância entre Tema Claro e Escuro"
+                description="Seletor de temas (Papel, Creme, Sépia, Noturno) e escala tipográfica personalizável para o leitor."
+                enabled={features.themeToggle}
+                isDark={isDark}
+                isSaving={isSavingFeatures}
+                onToggle={() => handleToggleFeature('themeToggle')}
+              />
+            </div>
+          
+{/* =========================================================================
             ABA 4: APLICATIVO MÓVEL (PWA)
             ========================================================================= */}
-        {activeTab === 'pwa' && (
-          <section className="space-y-6 animate-in fade-in duration-200 font-sans">
+        
             <div
               className={`p-6 rounded-2xl border transition-all ${
                 isDark ? 'bg-zinc-900/80 border-zinc-800' : 'bg-white border-stone-200 shadow-xs'
@@ -4153,12 +4169,17 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
             {/* Informações Pessoais */}
             <div className="space-y-4 text-xs font-sans">
               {/* Nome e Status */}
-              <div className="p-4 rounded-2xl bg-stone-50 dark:bg-zinc-800/50 border border-stone-200/60 dark:border-zinc-700/60">
-                <div className="flex items-center justify-between gap-2 mb-1.5">
+              <div className="p-4 rounded-2xl bg-stone-50 dark:bg-zinc-800/50 border border-stone-200/60 dark:border-zinc-700/60 space-y-2">
+                <div className="flex items-center justify-between gap-2">
                   <span className="text-[11px] font-semibold uppercase tracking-wider text-stone-400 dark:text-zinc-400">
                     Nome Completo Padronizado
                   </span>
-                  {selectedReaderDetails.hasProfile && selectedReaderDetails.profile ? (
+                  {selectedReaderDetails.isApproved === false ? (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 dark:bg-amber-950/70 dark:text-amber-300">
+                      <Clock className="w-3 h-3" />
+                      Pendente de Aprovação
+                    </span>
+                  ) : selectedReaderDetails.hasProfile && selectedReaderDetails.profile ? (
                     <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-sky-100 text-sky-800 dark:bg-sky-950/70 dark:text-sky-300">
                       <CheckCircle2 className="w-3 h-3" />
                       Cadastro Concluído
@@ -4173,6 +4194,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                 <div className="text-base font-serif font-bold text-stone-900 dark:text-zinc-100">
                   {selectedReaderDetails.profile?.fullName || selectedReaderDetails.name}
                 </div>
+                {(selectedReaderDetails.email || selectedReaderDetails.profile?.email) && (
+                  <div className="flex items-center gap-1.5 text-xs text-stone-600 dark:text-zinc-300">
+                    <Mail className="w-3.5 h-3.5 text-stone-400" />
+                    <span>{selectedReaderDetails.email || selectedReaderDetails.profile?.email}</span>
+                  </div>
+                )}
               </div>
 
               {/* Seção: Mensagens Inteligentes para o WhatsApp (Modelos Dinâmicos e IA Gemini) */}
@@ -4502,7 +4529,21 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                   <span>Redefinir PIN</span>
                 </button>
 
-                {selectedReaderDetails.status === 'active' ? (
+                {selectedReaderDetails.isApproved === false ? (
+                  <button
+                    type="button"
+                    onClick={() => handleApproveReader(selectedReaderDetails)}
+                    disabled={approvingReaderId === selectedReaderDetails.id}
+                    className="px-3.5 py-2 rounded-xl text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white transition-colors cursor-pointer flex items-center gap-1.5 shadow-2xs disabled:opacity-60"
+                  >
+                    {approvingReaderId === selectedReaderDetails.id ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <Check className="w-3.5 h-3.5" />
+                    )}
+                    <span>Aprovar / Liberar Acesso</span>
+                  </button>
+                ) : selectedReaderDetails.status === 'active' ? (
                   <button
                     type="button"
                     onClick={() => {
@@ -4655,18 +4696,41 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                 </div>
               </div>
 
+              {/* Campo 1.1: E-mail */}
+              <div>
+                <label className="block text-xs font-semibold mb-1.5 text-stone-700 dark:text-zinc-300">
+                  E-mail
+                </label>
+                <div className="relative">
+                  <Mail className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-stone-400" />
+                  <input
+                    type="email"
+                    value={editForm.email}
+                    onChange={(e) => {
+                      setEditForm((prev) => ({ ...prev, email: e.target.value }));
+                      if (editError) setEditError(null);
+                    }}
+                    placeholder="leitor@exemplo.com"
+                    className={`w-full pl-10 pr-4 py-2.5 rounded-xl text-xs border transition-colors outline-hidden ${
+                      isDark
+                        ? 'bg-zinc-800/80 border-zinc-700 text-zinc-100 focus:border-amber-400'
+                        : 'bg-stone-50 border-stone-300 text-stone-900 focus:border-amber-500'
+                    }`}
+                  />
+                </div>
+              </div>
+
               {/* Linha Dupla: WhatsApp e Nascimento */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
                 {/* Campo 2: WhatsApp / Celular */}
                 <div>
                   <label className="block text-xs font-semibold mb-1.5 text-stone-700 dark:text-zinc-300">
-                    WhatsApp / Celular com DDD <span className="text-rose-500">*</span>
+                    WhatsApp / Celular com DDD
                   </label>
                   <div className="relative">
                     <MessageCircle className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-stone-400" />
                     <input
                       type="tel"
-                      required
                       value={editForm.phone}
                       onChange={(e) => {
                         const formatted = formatPhoneNumber(e.target.value);
@@ -4686,13 +4750,13 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                 {/* Campo 3: Data de Nascimento */}
                 <div>
                   <label className="block text-xs font-semibold mb-1.5 text-stone-700 dark:text-zinc-300">
-                    Data de Nascimento <span className="text-rose-500">*</span>
+                    Data de Nascimento {!editingReader.selfRegistered && <span className="text-rose-500">*</span>}
                   </label>
                   <div className="relative">
                     <Calendar className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-stone-400" />
                     <input
                       type="date"
-                      required
+                      required={!editingReader.selfRegistered}
                       value={editForm.birthDate}
                       onChange={(e) => {
                         setEditForm((prev) => ({ ...prev, birthDate: e.target.value }));

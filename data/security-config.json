@@ -30,22 +30,27 @@
       },
       "e-ai-crente": {
         "chapters": {
-          "capitulo-4": false,
+          "capitulo-2": true,
           "capitulo-3": false,
           "capitulo-1": true,
-          "capitulo-2": true
+          "capitulo-4": false
         },
         "enabled": true
       }
     }
   },
+  "chapterHeaderImages": {},
   "readerAccesses": [
     {
       "id": "reader-1792694788406-d57f17e4",
       "name": "Rafael de Oliveira",
+      "email": "",
       "pinHash": "b4434c5c4871e8259525c0b1d2c9233c54c5e7969774820d783b4b7e08c4b0e3",
       "pinSalt": "51a3eebf1ddc6d9bc6815c043959641d",
       "status": "active",
+      "isApproved": true,
+      "selfRegistered": false,
+      "approvedAt": null,
       "createdAt": "2026-10-22T18:46:28.406Z",
       "expiresAt": null,
       "lastUsedAt": null,
@@ -54,19 +59,19 @@
       "profile": null,
       "contentPermissions": {
         "books": {
-          "e-ai-crente": {
-            "enabled": true,
-            "chapters": {
-              "capitulo-2": false,
-              "capitulo-1": true
-            }
-          },
           "entre-a-cruz-e-o-mundo": {
             "enabled": true,
             "chapters": {
               "capitulo-2": false,
               "capitulo-1": false
             }
+          },
+          "e-ai-crente": {
+            "chapters": {
+              "capitulo-2": false,
+              "capitulo-1": true
+            },
+            "enabled": true
           }
         }
       },
@@ -75,71 +80,90 @@
     {
       "id": "reader-1792692553568-938b18de",
       "name": "Elaine Cristina Carchano Garcia",
+      "email": "",
       "pinHash": "2bcc78e99afe3089c4a91e1813b348b4c0373df9a62a84ba4691adaa4787a65c",
       "pinSalt": "377370c88f1e7afa2640ce73e1ce6818",
       "status": "active",
+      "isApproved": true,
+      "selfRegistered": false,
+      "approvedAt": null,
       "createdAt": "2026-10-22T18:09:13.568Z",
       "expiresAt": null,
-      "lastUsedAt": null,
+      "lastUsedAt": "2026-11-09T00:07:42.637Z",
       "notes": "",
-      "hasProfile": false,
-      "profile": null,
+      "hasProfile": true,
+      "profile": {
+        "fullName": "Elaine Cristina Carchano Garcia",
+        "birthDate": "1977-01-29",
+        "gender": "Feminino",
+        "phone": "19999956596",
+        "phoneFormatted": "(19) 99995-6596",
+        "updatedAt": "2026-10-29T12:43:21.654Z",
+        "registeredAt": "2026-10-29T12:43:21.654Z",
+        "maritalStatus": "Casado(a)"
+      },
       "contentPermissions": {
         "books": {
           "entre-a-cruz-e-o-mundo": {
-            "enabled": true,
             "chapters": {
-              "capitulo-2": false,
-              "capitulo-1": true
-            }
-          },
-          "e-ai-crente": {
-            "chapters": {
-              "capitulo-2": false,
-              "capitulo-1": false
+              "capitulo-1": true,
+              "capitulo-2": true
             },
             "enabled": true
+          },
+          "e-ai-crente": {
+            "enabled": true,
+            "chapters": {
+              "capitulo-1": true,
+              "capitulo-4": true,
+              "capitulo-2": true,
+              "capitulo-3": true
+            }
           }
         }
       },
-      "updatedAt": "2026-10-22T18:09:13.569Z"
+      "updatedAt": "2026-11-17T00:08:41.615Z"
     },
     {
       "id": "reader-1792429156207-8efa59b1",
       "name": "Patrícia Nascimento",
+      "email": "",
       "pinHash": "523b78911e0faa1cce9254a88b0b6373ae4ba657010d72ce13c7103c43d8c102",
       "pinSalt": "05cc2103574d46c6dfea2229c8d05dc7",
       "status": "active",
+      "isApproved": true,
+      "selfRegistered": false,
+      "approvedAt": null,
       "createdAt": "2026-10-19T16:59:16.207Z",
       "expiresAt": null,
       "lastUsedAt": "2026-10-22T18:14:12.472Z",
       "notes": "",
       "hasProfile": true,
       "profile": {
-        "registeredAt": "2026-10-19T17:59:23.251Z",
-        "phone": "19995251590",
-        "fullName": "Patrícia Nascimento",
-        "gender": "Feminino",
         "updatedAt": "2026-10-22T17:11:31.584Z",
+        "maritalStatus": "Divorciado(a)",
+        "registeredAt": "2026-10-19T17:59:23.251Z",
         "phoneFormatted": "(19) 99525-1590",
-        "birthDate": "1992-03-28",
-        "maritalStatus": "Divorciado(a)"
+        "gender": "Feminino",
+        "fullName": "Patrícia Nascimento",
+        "phone": "19995251590",
+        "birthDate": "1992-03-28"
       },
       "contentPermissions": {
         "books": {
-          "entre-a-cruz-e-o-mundo": {
+          "e-ai-crente": {
             "chapters": {
-              "capitulo-2": false,
-              "capitulo-1": true
+              "capitulo-1": true,
+              "capitulo-2": false
             },
             "enabled": true
           },
-          "e-ai-crente": {
+          "entre-a-cruz-e-o-mundo": {
+            "enabled": true,
             "chapters": {
-              "capitulo-2": false,
-              "capitulo-1": true
-            },
-            "enabled": true
+              "capitulo-1": true,
+              "capitulo-2": false
+            }
           }
         }
       },
@@ -148,72 +172,83 @@
     {
       "id": "reader-1791893732551-e38689bb",
       "name": "Ana Clara Carchano Garcia",
+      "email": "",
       "pinHash": "44046704b6ef60587bbe0e3eca6263604acfd784c11e1fe6e37a0e0d2a8c70df",
       "pinSalt": "23a0a007341f6d5af0a938cfc87a69f7",
       "status": "active",
+      "isApproved": true,
+      "selfRegistered": false,
+      "approvedAt": null,
       "createdAt": "2026-10-13T12:15:32.551Z",
       "expiresAt": null,
-      "lastUsedAt": "2026-10-25T02:13:33.929Z",
+      "lastUsedAt": "2026-11-17T12:38:38.345Z",
       "notes": "Leitora teste",
       "hasProfile": true,
       "profile": {
-        "phoneFormatted": "(19) 99760-1107",
+        "gender": "Feminino",
+        "phone": "19997601107",
         "birthDate": "2006-04-11",
         "maritalStatus": "Casado(a)",
+        "phoneFormatted": "(19) 99760-1107",
         "fullName": "Ana Clara Carchano Garcia",
-        "phone": "19997601107",
-        "gender": "Feminino",
         "updatedAt": "2026-10-16T16:14:53.626Z",
         "registeredAt": "2026-10-16T16:14:53.626Z"
       },
       "contentPermissions": {
         "books": {
           "entre-a-cruz-e-o-mundo": {
-            "enabled": true,
             "chapters": {
-              "capitulo-2": false,
-              "capitulo-1": true
-            }
+              "capitulo-1": true,
+              "capitulo-2": true
+            },
+            "enabled": true
           },
           "e-ai-crente": {
             "chapters": {
-              "capitulo-1": false
+              "capitulo-4": true,
+              "capitulo-1": true,
+              "capitulo-3": true,
+              "capitulo-2": true
             },
             "enabled": true
           }
         }
       },
-      "updatedAt": "2026-10-25T02:13:33.930Z"
+      "updatedAt": "2026-11-17T12:38:38.346Z"
     },
     {
       "id": "access-initial-default",
       "name": "Fernando Veiga",
+      "email": "",
       "pinHash": "67afb65678abb69c90ce2f07fc0c2ef430d4759ac3e70387dd20d1dbea106ab7",
       "pinSalt": "fb8fd295707c4fbf7877eaebd8e64e7b",
       "status": "active",
+      "isApproved": true,
+      "selfRegistered": false,
+      "approvedAt": null,
       "createdAt": "2026-10-10T16:41:50.949Z",
       "expiresAt": null,
       "lastUsedAt": "2026-10-23T21:24:17.235Z",
       "notes": "Acesso inicial configurado pelo sistema",
       "hasProfile": true,
       "profile": {
-        "fullName": "Fernando Veiga",
-        "gender": "Masculino",
-        "birthDate": "1967-04-02",
         "updatedAt": "2026-10-13T12:12:21.075Z",
-        "registeredAt": "2026-10-13T12:12:21.075Z",
-        "phoneFormatted": "(19) 98102-6699",
+        "gender": "Masculino",
         "phone": "19981026699",
-        "maritalStatus": "Casado(a)"
+        "maritalStatus": "Casado(a)",
+        "fullName": "Fernando Veiga",
+        "registeredAt": "2026-10-13T12:12:21.075Z",
+        "birthDate": "1967-04-02",
+        "phoneFormatted": "(19) 98102-6699"
       },
       "contentPermissions": {
         "books": {
           "entre-a-cruz-e-o-mundo": {
+            "enabled": true,
             "chapters": {
-              "capitulo-2": true,
-              "capitulo-1": true
-            },
-            "enabled": true
+              "capitulo-1": true,
+              "capitulo-2": true
+            }
           },
           "e-ai-crente": {
             "enabled": true,
