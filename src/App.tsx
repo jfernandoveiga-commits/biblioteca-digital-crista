@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { libraryBooks, DEFAULT_CONTENT_AVAILABILITY, isChapterAvailableToReaders } from './data/booksCatalog';
 import { ChapterReader } from './components/ChapterReader';
 import { BibleReader } from './components/BibleReader';
@@ -13,6 +13,7 @@ import { ContinueReadingCard } from './components/ContinueReadingCard';
 import { smartBookmarkService, SmartBookmark } from './services/smartBookmarkService';
 import { authService } from './services/authService';
 import { adminAuthService } from './services/adminAuthService';
+import { subscribeToLibraryUpdates } from './services/realtimeSyncService';
 import {
   ReadingTheme,
   FontSizeScale,
@@ -81,6 +82,7 @@ export default function App() {
   const [readerName, setReaderName] = useState<string>(() => {
     return adminAuthService.getToken() ? 'Administrador' : '';
   });
+  const [readerAccessId, setReaderAccessId] = useState<string | null>(null);
 
   // Funcionalidades e Disponibilidade gerenciadas pelo Administrador
   const [features, setFeatures] = useState<LibraryFeaturesConfig>(DEFAULT_LIBRARY_FEATURES);
@@ -170,88 +172,100 @@ export default function App() {
   const [activeBibleReaderTarget, setActiveBibleReaderTarget] = useState<BibleReferenceTarget | null>(null);
 
   // Busca configurações da biblioteca e status de sessão no servidor e sincroniza em tempo real entre dispositivos
+  const isMountedRef = useRef<boolean>(true);
   useEffect(() => {
-    let isMounted = true;
-    const loadSessionAndConfig = async () => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
+
+  const loadSessionAndConfig = useCallback(async () => {
+    try {
+      // 1. Verifica se há sessão administrativa ativa no navegador ou servidor
+      let isUserAdmin = false;
+      let adminUsername = '';
       try {
-        // 1. Verifica se há sessão administrativa ativa no navegador ou servidor
-        let isUserAdmin = false;
-        let adminUsername = '';
-        try {
-          const adminStatus = await adminAuthService.checkSession();
-          if (adminStatus.authenticated) {
-            isUserAdmin = true;
-            adminUsername = adminStatus.username || 'admin';
-          }
-        } catch {
-          // ignora
-        }
-
-        // 2. Consulta status de sessão da biblioteca e configurações mais recentes do Firestore
-        const [session, config] = await Promise.all([
-          authService.checkSession(),
-          authService.getLibraryConfig(),
-        ]);
-
-        if (isMounted) {
-          if (isUserAdmin || session.isAdmin) {
-            setIsAdminSession(true);
-            setIsAuthenticated(true);
-            setHasProfile(true);
-            const admName = session.readerName || `Administrador (${adminUsername || 'admin'})`;
-            setReaderName(admName);
-            setReaderProfile(
-              session.readerProfile || {
-                fullName: admName,
-                phone: '',
-                phoneFormatted: 'Acesso Administrativo',
-                birthDate: '1970-01-01',
-                gender: 'Prefiro não informar',
-                maritalStatus: 'Prefiro não informar',
-                registeredAt: new Date().toISOString(),
-                updatedAt: new Date().toISOString(),
-              }
-            );
-          } else {
-            setIsAdminSession(false);
-            setIsAuthenticated(session.authenticated);
-            if (session.authenticated) {
-              const isProfileComplete = Boolean(
-                session.hasProfile &&
-                session.requiresRegistration === false &&
-                session.readerProfile?.fullName
-              );
-              setHasProfile(isProfileComplete);
-              setReaderProfile(session.readerProfile || null);
-              setReaderName(session.readerName || '');
-            } else {
-              setHasProfile(false);
-              setReaderProfile(null);
-              setReaderName('');
-            }
-          }
-
-          const latestFeatures = session.features || config.features;
-          const latestContent = session.contentAvailability || config.contentAvailability;
-          const latestImages = config.chapterHeaderImages || session.chapterHeaderImages || {};
-          if (latestFeatures) setFeatures(latestFeatures);
-          if (latestContent) setContentAvailability(latestContent);
-          setChapterHeaderImages(latestImages);
+        const adminStatus = await adminAuthService.checkSession();
+        if (adminStatus.authenticated) {
+          isUserAdmin = true;
+          adminUsername = adminStatus.username || 'admin';
         }
       } catch {
-        if (isMounted) {
-          setIsAuthenticated(false);
-          setHasProfile(null);
+        // ignora
+      }
+
+      // 2. Consulta status de sessão da biblioteca e configurações mais recentes do Firestore
+      const [session, config] = await Promise.all([
+        authService.checkSession(),
+        authService.getLibraryConfig(),
+      ]);
+
+      if (!isMountedRef.current) return;
+
+      if (isUserAdmin || session.isAdmin) {
+        setIsAdminSession(true);
+        setIsAuthenticated(true);
+        setHasProfile(true);
+        setReaderAccessId(null);
+        const admName = session.readerName || `Administrador (${adminUsername || 'admin'})`;
+        setReaderName(admName);
+        setReaderProfile(
+          session.readerProfile || {
+            fullName: admName,
+            phone: '',
+            phoneFormatted: 'Acesso Administrativo',
+            birthDate: '1970-01-01',
+            gender: 'Prefiro não informar',
+            maritalStatus: 'Prefiro não informar',
+            registeredAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          }
+        );
+      } else {
+        setIsAdminSession(false);
+        setIsAuthenticated(session.authenticated);
+        if (session.authenticated) {
+          setReaderAccessId(session.accessId || null);
+          const isProfileComplete = Boolean(
+            session.hasProfile &&
+            session.requiresRegistration === false &&
+            session.readerProfile?.fullName
+          );
+          setHasProfile(isProfileComplete);
+          setReaderProfile(session.readerProfile || null);
+          setReaderName(session.readerName || '');
+        } else {
+          setReaderAccessId(null);
+          setHasProfile(false);
           setReaderProfile(null);
           setReaderName('');
         }
-      } finally {
-        if (isMounted) {
-          setIsCheckingAuth(false);
-        }
       }
-    };
 
+      const latestFeatures = session.features || config.features;
+      const latestContent = session.contentAvailability || config.contentAvailability;
+      const latestImages = config.chapterHeaderImages || session.chapterHeaderImages || {};
+      if (latestFeatures) setFeatures(latestFeatures);
+      if (latestContent) setContentAvailability(latestContent);
+      setChapterHeaderImages(latestImages);
+    } catch {
+      // Em instabilidade temporária de rede/offline, preserva o estado de sessão local se houver token válido
+      if (isMountedRef.current && !adminAuthService.getToken() && !authService.getToken()) {
+        setIsAuthenticated(false);
+        setHasProfile(null);
+        setReaderProfile(null);
+        setReaderName('');
+        setReaderAccessId(null);
+      }
+    } finally {
+      if (isMountedRef.current) {
+        setIsCheckingAuth(false);
+      }
+    }
+  }, []);
+
+  useEffect(() => {
     loadSessionAndConfig();
 
     const handleVisibilityOrFocus = () => {
@@ -259,7 +273,11 @@ export default function App() {
         loadSessionAndConfig();
       }
     };
+    const handleOnline = () => {
+      loadSessionAndConfig();
+    };
     window.addEventListener('focus', handleVisibilityOrFocus);
+    window.addEventListener('online', handleOnline);
     document.addEventListener('visibilitychange', handleVisibilityOrFocus);
 
     const syncInterval = window.setInterval(() => {
@@ -269,12 +287,19 @@ export default function App() {
     }, 15000);
 
     return () => {
-      isMounted = false;
       window.removeEventListener('focus', handleVisibilityOrFocus);
+      window.removeEventListener('online', handleOnline);
       document.removeEventListener('visibilitychange', handleVisibilityOrFocus);
       window.clearInterval(syncInterval);
     };
-  }, [currentRoute]);
+  }, [currentRoute, loadSessionAndConfig]);
+
+  // Escuta em tempo real no Cloud Firestore + SSE para refletir liberações de livros/capítulos instantaneamente nos dispositivos
+  useEffect(() => {
+    return subscribeToLibraryUpdates(readerAccessId, () => {
+      loadSessionAndConfig();
+    });
+  }, [readerAccessId, loadSessionAndConfig]);
 
   // Bloqueio manual de acesso / Logout
   const handleLogout = async () => {
@@ -289,6 +314,7 @@ export default function App() {
     setHasProfile(null);
     setReaderProfile(null);
     setReaderName('');
+    setReaderAccessId(null);
     setShowLibraryModal(false);
   };
 
@@ -495,6 +521,7 @@ export default function App() {
         theme={theme}
         onAuthenticated={(result) => {
           setIsAuthenticated(true);
+          setReaderAccessId(result?.accessId || null);
           const isComplete = Boolean(
             result?.hasProfile &&
             result?.requiresRegistration === false &&
@@ -503,6 +530,10 @@ export default function App() {
           setHasProfile(isComplete);
           setReaderProfile(result?.readerProfile || null);
           setReaderName(result?.readerName || '');
+          if (result?.features) setFeatures(result.features);
+          if (result?.contentAvailability) setContentAvailability(result.contentAvailability);
+          if (result?.chapterHeaderImages) setChapterHeaderImages(result.chapterHeaderImages);
+          void loadSessionAndConfig();
         }}
         onNavigateToAdmin={() => navigateTo('/admin')}
         onNavigateToRegister={() => navigateTo('/register')}
@@ -528,6 +559,7 @@ export default function App() {
             setHasProfile(true);
             setReaderProfile(profile);
             setReaderName(profile.fullName);
+            void loadSessionAndConfig();
           }}
           onLogout={handleLogout}
           onNavigateToAdmin={() => navigateTo('/admin')}

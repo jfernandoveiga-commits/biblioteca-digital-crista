@@ -19,6 +19,7 @@ import {
   getDocs,
   collection,
   writeBatch,
+  onSnapshot,
 } from 'firebase/firestore';
 import {
   initializeApp as initAdminApp,
@@ -579,6 +580,102 @@ class FirebaseServerStore {
         error: err.message,
       };
     }
+  }
+
+  /**
+   * Inscreve listeners em tempo real (onSnapshot) no Cloud Firestore para
+   * sincronizar instantaneamente alterações de acessos, livros, capítulos e imagens entre servidores/dispositivos.
+   */
+  public subscribeRealtimeSync(onChange: (source: 'system_config' | 'reader_accesses') => void): () => void {
+    if (!this.isReady()) {
+      return () => {};
+    }
+
+    const unsubscribers: Array<() => void> = [];
+    let isFirstSystemSnap = true;
+    let isFirstReadersSnap = true;
+
+    try {
+      if (this.clientDb) {
+        const unsubSys = onSnapshot(
+          collection(this.clientDb, 'system_config'),
+          (snap) => {
+            if (isFirstSystemSnap) {
+              isFirstSystemSnap = false;
+              return;
+            }
+            if (snap.docChanges().length > 0) {
+              onChange('system_config');
+            }
+          },
+          (err) => {
+            console.warn('[Firebase Realtime] Aviso no listener de system_config:', err?.message || err);
+          }
+        );
+        unsubscribers.push(unsubSys);
+
+        const unsubReaders = onSnapshot(
+          collection(this.clientDb, 'reader_accesses'),
+          (snap) => {
+            if (isFirstReadersSnap) {
+              isFirstReadersSnap = false;
+              return;
+            }
+            if (snap.docChanges().length > 0) {
+              onChange('reader_accesses');
+            }
+          },
+          (err) => {
+            console.warn('[Firebase Realtime] Aviso no listener de reader_accesses:', err?.message || err);
+          }
+        );
+        unsubscribers.push(unsubReaders);
+      } else if (this.adminDb) {
+        const unsubSys = this.adminDb.collection('system_config').onSnapshot(
+          (snap) => {
+            if (isFirstSystemSnap) {
+              isFirstSystemSnap = false;
+              return;
+            }
+            if (snap.docChanges().length > 0) {
+              onChange('system_config');
+            }
+          },
+          (err) => {
+            console.warn('[Firebase Admin Realtime] Aviso no listener de system_config:', err?.message || err);
+          }
+        );
+        unsubscribers.push(unsubSys);
+
+        const unsubReaders = this.adminDb.collection('reader_accesses').onSnapshot(
+          (snap) => {
+            if (isFirstReadersSnap) {
+              isFirstReadersSnap = false;
+              return;
+            }
+            if (snap.docChanges().length > 0) {
+              onChange('reader_accesses');
+            }
+          },
+          (err) => {
+            console.warn('[Firebase Admin Realtime] Aviso no listener de reader_accesses:', err?.message || err);
+          }
+        );
+        unsubscribers.push(unsubReaders);
+      }
+    } catch (err: any) {
+      console.warn('[Firebase Realtime] Erro ao iniciar listeners em tempo real:', err?.message || err);
+    }
+
+    return () => {
+      for (const unsub of unsubscribers) {
+        try {
+          unsub();
+        } catch {
+          // ignora
+        }
+      }
+    };
   }
 }
 

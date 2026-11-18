@@ -212,25 +212,7 @@ function loadOrCreateSecurityConfig(): SecurityConfig {
         };
 
         const rawContentBooks = parsed.contentAvailability?.books || {};
-        const cleanedContentBooks: Record<string, any> = {};
-        for (const [key, val] of Object.entries(rawContentBooks)) {
-          const normKey = (key === 'e-ai-crentes-ok' || key === 'e-ai-crentes') ? 'e-ai-crente' : key;
-          cleanedContentBooks[normKey] = {
-            ...(cleanedContentBooks[normKey] || {}),
-            ...(val as any),
-            chapters: {
-              ...(cleanedContentBooks[normKey]?.chapters || {}),
-              ...((val as any).chapters || {}),
-            },
-          };
-        }
-
-        const contentAvailability: ContentAvailabilityConfig = {
-          books: {
-            ...DEFAULT_CONTENT_AVAILABILITY.books,
-            ...cleanedContentBooks,
-          },
-        };
+        const contentAvailability = normalizeBooksMap(rawContentBooks);
 
         const readerAccesses: ReaderAccessRecord[] = Array.isArray(parsed.readerAccesses)
           ? parsed.readerAccesses
@@ -325,7 +307,14 @@ const FIRESTORE_SYNC_TTL_MS = 3000;
 function normalizeBooksMap(rawBooks: Record<string, any> | undefined): ContentAvailabilityConfig {
   const cleanedBooks: Record<string, any> = {};
   if (rawBooks && typeof rawBooks === 'object') {
-    for (const [key, val] of Object.entries(rawBooks)) {
+    const entries = Object.entries(rawBooks);
+    // Processa primeiro eventuais chaves legadas para que as chaves canônicas sempre tenham prioridade absoluta
+    const sortedEntries = [
+      ...entries.filter(([k]) => k === 'e-ai-crentes-ok' || k === 'e-ai-crentes'),
+      ...entries.filter(([k]) => k !== 'e-ai-crentes-ok' && k !== 'e-ai-crentes'),
+    ];
+    for (const [key, val] of sortedEntries) {
+      if (!val || typeof val !== 'object') continue;
       const normKey = (key === 'e-ai-crentes-ok' || key === 'e-ai-crentes') ? 'e-ai-crente' : key;
       cleanedBooks[normKey] = {
         ...(cleanedBooks[normKey] || {}),
@@ -345,8 +334,88 @@ function normalizeBooksMap(rawBooks: Record<string, any> | undefined): ContentAv
   };
 }
 
+/**
+ * Calcula a disponibilidade efetiva de livros e capítulos para um leitor:
+ * - Se o administrador configurou explicitamente permissões para um livro/capítulo no perfil do leitor,
+ *   essa decisão individual prevalece (permitindo liberar obras para leitores cadastrados mesmo que
+ *   estejam bloqueadas no catálogo público geral, ou bloquear individualmente).
+ * - Para capítulos novos ou não configurados individualmente, aplica o fallback da configuração geral
+ *   da biblioteca (onde novos capítulos iniciam bloqueados por padrão).
+ */
+function computeEffectiveContentAvailability(
+  globalAvailability: ContentAvailabilityConfig,
+  matchedAccess?: ReaderAccessRecord | null
+): ContentAvailabilityConfig {
+  const globalBooks = globalAvailability?.books || {};
+  const readerBooks = matchedAccess?.contentPermissions?.books || {};
+  const allBookIds = new Set([...Object.keys(globalBooks), ...Object.keys(readerBooks)]);
+  const effectiveBooks: Record<string, BookAvailability> = {};
+
+  for (const bId of allBookIds) {
+    const gBook = globalBooks[bId];
+    const rBook = readerBooks[bId];
+    const hasReaderBookConfig = Boolean(rBook && typeof rBook === 'object');
+
+    const bookEnabled =
+      hasReaderBookConfig && typeof rBook?.enabled === 'boolean'
+        ? rBook.enabled
+        : gBook
+        ? gBook.enabled !== false
+        : false;
+
+    const allChapterIds = new Set([
+      ...Object.keys(gBook?.chapters || {}),
+      ...Object.keys(rBook?.chapters || {}),
+    ]);
+    const effectiveChapters: Record<string, boolean> = {};
+
+    for (const chId of allChapterIds) {
+      if (!bookEnabled) {
+        effectiveChapters[chId] = false;
+        continue;
+      }
+
+      const hasExplicitReaderChapter =
+        hasReaderBookConfig &&
+        rBook?.chapters &&
+        typeof rBook.chapters[chId] === 'boolean';
+
+      if (hasExplicitReaderChapter) {
+        effectiveChapters[chId] = rBook!.chapters![chId] === true;
+      } else {
+        effectiveChapters[chId] = Boolean(
+          gBook && gBook.enabled !== false && gBook.chapters?.[chId] === true
+        );
+      }
+    }
+
+    effectiveBooks[bId] = {
+      enabled: bookEnabled,
+      chapters: effectiveChapters,
+    };
+  }
+
+  return { books: effectiveBooks };
+}
+
 function invalidateFirestoreCache(): void {
   lastFirestoreRefreshAt = Date.now();
+}
+
+function markFirestoreCacheStale(): void {
+  lastFirestoreRefreshAt = 0;
+}
+
+const sseSyncClients = new Set<express.Response>();
+function broadcastLibrarySyncEvent(reason: string): void {
+  const payload = `event: sync\ndata: ${JSON.stringify({ reason, ts: Date.now() })}\n\n`;
+  for (const client of sseSyncClients) {
+    try {
+      client.write(payload);
+    } catch {
+      sseSyncClients.delete(client);
+    }
+  }
 }
 
 /**
@@ -851,6 +920,32 @@ app.get('/api/health', (_req, res) => {
   });
 });
 
+// Stream SSE em tempo real para notificar todos os dispositivos conectados quando o admin libera/atualiza conteúdos ou acessos
+app.get('/api/library/events', (req, res) => {
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no');
+  res.flushHeaders?.();
+
+  res.write(`event: connected\ndata: ${JSON.stringify({ ts: Date.now() })}\n\n`);
+  sseSyncClients.add(res);
+
+  const keepAlive = setInterval(() => {
+    try {
+      res.write(': keepalive\n\n');
+    } catch {
+      clearInterval(keepAlive);
+      sseSyncClients.delete(res);
+    }
+  }, 25000);
+
+  req.on('close', () => {
+    clearInterval(keepAlive);
+    sseSyncClients.delete(res);
+  });
+});
+
 // Consulta de sessão do leitor
 app.get('/api/auth/session', async (req, res) => {
   await refreshStateFromFirestore();
@@ -970,36 +1065,11 @@ app.get('/api/auth/session', async (req, res) => {
 
   const hasProfile = isReaderProfileComplete(matchedAccess);
 
-  // Calcula a disponibilidade efetiva para este leitor:
-  // Combina a configuração geral da biblioteca com as permissões individuais do leitor (Liberado/Bloqueado)
-  let effectiveContentAvailability: ContentAvailabilityConfig = {
-    books: { ...securityConfig.contentAvailability.books },
-  };
-
-  if (matchedAccess?.contentPermissions?.books) {
-    const mergedBooks: Record<string, BookAvailability> = {};
-    for (const [bId, bConfig] of Object.entries(securityConfig.contentAvailability.books)) {
-      mergedBooks[bId] = {
-        enabled: bConfig.enabled,
-        chapters: { ...bConfig.chapters },
-      };
-    }
-    for (const [bId, bPerm] of Object.entries(matchedAccess.contentPermissions.books)) {
-      const current = mergedBooks[bId] || { enabled: true, chapters: {} };
-      const bookEnabled = current.enabled !== false && bPerm.enabled !== false;
-      const mergedChapters: Record<string, boolean> = { ...(current.chapters || {}) };
-      if (bPerm.chapters) {
-        for (const [chId, chVal] of Object.entries(bPerm.chapters)) {
-          mergedChapters[chId] = (mergedChapters[chId] !== false) && (chVal !== false);
-        }
-      }
-      mergedBooks[bId] = {
-        enabled: bookEnabled,
-        chapters: mergedChapters,
-      };
-    }
-    effectiveContentAvailability = { books: mergedBooks };
-  }
+  // Calcula a disponibilidade efetiva para este leitor combinando configuração geral e liberações individuais
+  const effectiveContentAvailability = computeEffectiveContentAvailability(
+    securityConfig.contentAvailability,
+    matchedAccess
+  );
 
   res.json({
     authenticated: true,
@@ -1060,26 +1130,7 @@ app.get('/api/library/check-access/:bookId/:chapterId', async (req, res) => {
 
   const { bookId, chapterId } = req.params;
 
-  // 1. Verificação global da biblioteca
-  const bookConfig = securityConfig.contentAvailability.books[bookId];
-  if (bookConfig && bookConfig.enabled === false) {
-    res.status(403).json({
-      allowed: false,
-      error: 'Este livro está temporariamente indisponível para leitura.',
-    });
-    return;
-  }
-
-  // REGRA ESTRITA: Bloqueado por padrão. Apenas capítulos explicitamente liberados (true) são acessíveis aos leitores
-  if (!bookConfig || !bookConfig.chapters || bookConfig.chapters[chapterId] !== true) {
-    res.status(403).json({
-      allowed: false,
-      error: 'Este capítulo está bloqueado ou aguardando liberação pela administração.',
-    });
-    return;
-  }
-
-  // 2. Verificação individual do perfil do leitor autenticado
+  // 1. Autenticação do leitor (necessária para aplicar tanto regras globais quanto liberações individuais)
   const readerToken = extractReaderToken(req);
   if (!readerToken) {
     res.status(401).json({
@@ -1100,9 +1151,17 @@ app.get('/api/library/check-access/:bookId/:chapterId', async (req, res) => {
     return;
   }
 
-  if (session.accessId) {
-    const reader = (securityConfig.readerAccesses || []).find((a) => a.id === session.accessId);
-    if (reader && !isReaderProfileComplete(reader)) {
+  let reader: ReaderAccessRecord | undefined;
+  if (session.accessId && session.accessId !== 'access-general') {
+    reader = (securityConfig.readerAccesses || []).find((a) => a.id === session.accessId);
+    if (!reader || reader.status !== 'active' || reader.isApproved === false) {
+      res.status(403).json({
+        allowed: false,
+        error: 'O acesso deste leitor está bloqueado ou aguardando aprovação pela administração.',
+      });
+      return;
+    }
+    if (!isReaderProfileComplete(reader)) {
       res.status(403).json({
         allowed: false,
         requiresRegistration: true,
@@ -1110,26 +1169,28 @@ app.get('/api/library/check-access/:bookId/:chapterId', async (req, res) => {
       });
       return;
     }
+  }
 
-    if (reader && reader.contentPermissions && reader.contentPermissions.books) {
-      const readerBookPerm = reader.contentPermissions.books[bookId];
-      if (readerBookPerm) {
-        if (readerBookPerm.enabled === false) {
-          res.status(403).json({
-            allowed: false,
-            error: 'O acesso a este livro está bloqueado para o seu perfil de leitor pela administração.',
-          });
-          return;
-        }
-        if (readerBookPerm.chapters && readerBookPerm.chapters[chapterId] === false) {
-          res.status(403).json({
-            allowed: false,
-            error: 'O acesso a este capítulo está bloqueado para o seu perfil de leitor pela administração.',
-          });
-          return;
-        }
-      }
-    }
+  // 2. Avaliação unificada da permissão efetiva (liberação individual do leitor OU configuração geral)
+  const effectiveAvailability = computeEffectiveContentAvailability(
+    securityConfig.contentAvailability,
+    reader
+  );
+  const effectiveBook = effectiveAvailability.books[bookId];
+  if (!effectiveBook || effectiveBook.enabled === false) {
+    res.status(403).json({
+      allowed: false,
+      error: 'Este livro está temporariamente indisponível para leitura.',
+    });
+    return;
+  }
+
+  if (!effectiveBook.chapters || effectiveBook.chapters[chapterId] !== true) {
+    res.status(403).json({
+      allowed: false,
+      error: 'Este capítulo está bloqueado ou aguardando liberação pela administração.',
+    });
+    return;
   }
 
   res.json({ allowed: true });
@@ -1374,6 +1435,10 @@ app.post('/api/auth/verify-pin', async (req, res) => {
   res.setHeader('Set-Cookie', cookieOptions.join('; '));
 
   const hasProfile = isReaderProfileComplete(matchedAccess);
+  const effectiveContentAvailability = computeEffectiveContentAvailability(
+    securityConfig.contentAvailability,
+    matchedAccess
+  );
 
   res.json({
     success: true,
@@ -1384,6 +1449,9 @@ app.post('/api/auth/verify-pin', async (req, res) => {
     hasProfile,
     requiresRegistration: !hasProfile,
     readerProfile: matchedAccess.profile || null,
+    features: securityConfig.features,
+    contentAvailability: effectiveContentAvailability,
+    chapterHeaderImages: securityConfig.chapterHeaderImages || {},
   });
 });
 
@@ -2115,6 +2183,7 @@ app.post('/api/admin/toggle-lock', requireAdminAuth, async (req, res) => {
 
   saveSecurityConfig(securityConfig);
   await syncSystemConfigToFirestore();
+  broadcastLibrarySyncEvent('toggle_lock');
 
   res.json({
     success: true,
@@ -2185,6 +2254,7 @@ app.post('/api/admin/features', requireAdminAuth, async (req, res) => {
 
   saveSecurityConfig(securityConfig);
   await syncSystemConfigToFirestore();
+  broadcastLibrarySyncEvent('features');
 
   res.json({
     success: true,
@@ -2237,8 +2307,10 @@ app.post('/api/admin/content-availability', requireAdminAuth, async (req, res) =
     }
   }
 
+  securityConfig.contentAvailability = normalizeBooksMap(securityConfig.contentAvailability.books);
   saveSecurityConfig(securityConfig);
   await syncSystemConfigToFirestore();
+  broadcastLibrarySyncEvent('content_availability');
 
   res.json({
     success: true,
@@ -2282,6 +2354,7 @@ app.post('/api/admin/chapter-image', requireAdminAuth, async (req, res) => {
       await syncSystemConfigToFirestore();
       invalidateFirestoreCache();
     }
+    broadcastLibrarySyncEvent('chapter_image');
 
     res.json({
       success: true,
@@ -2508,6 +2581,7 @@ app.patch('/api/admin/readers/:id/status', requireAdminAuth, async (req, res) =>
   } catch (err: any) {
     console.warn('[Firebase] Erro ao atualizar status do leitor no Firestore:', err?.message || err);
   }
+  broadcastLibrarySyncEvent('reader_status');
 
   res.json({
     success: true,
@@ -2551,6 +2625,7 @@ app.post('/api/admin/readers/:id/approve', requireAdminAuth, async (req, res) =>
   } catch (err: any) {
     console.warn('[Firebase] Erro ao aprovar leitor no Firestore:', err?.message || err);
   }
+  broadcastLibrarySyncEvent('reader_approve');
 
   res.json({
     success: true,
@@ -2880,7 +2955,11 @@ app.put('/api/admin/readers/:id/permissions', requireAdminAuth, async (req, res)
   const { id } = req.params;
   const { contentPermissions } = req.body || {};
 
-  const target = (securityConfig.readerAccesses || []).find((a) => a.id === id);
+  let target = (securityConfig.readerAccesses || []).find((a) => a.id === id);
+  if (!target) {
+    await refreshStateFromFirestore(true);
+    target = (securityConfig.readerAccesses || []).find((a) => a.id === id);
+  }
   if (!target) {
     res.status(404).json({
       success: false,
@@ -2890,13 +2969,16 @@ app.put('/api/admin/readers/:id/permissions', requireAdminAuth, async (req, res)
   }
 
   target.contentPermissions = contentPermissions || { books: {} };
+  target.updatedAt = new Date().toISOString();
   saveSecurityConfig(securityConfig);
+  invalidateFirestoreCache();
 
   try {
     await firebaseServerStore.saveReaderAccess(target);
   } catch (err: any) {
     console.warn('[Firebase] Aviso ao salvar permissões no Firestore:', err.message);
   }
+  broadcastLibrarySyncEvent('reader_permissions');
 
   res.json({
     success: true,
@@ -3088,6 +3170,19 @@ Capítulo selecionado: ${cleanChapterTitle || 'Geral'}`;
 async function startServer() {
   // Sincroniza dados persistentes com o Cloud Firestore antes de abrir as portas
   await syncWithFirestore();
+
+  // Ativa listener em tempo real no Firestore para sincronizar alterações feitas por outros dispositivos/instâncias
+  if (firebaseServerStore.isReady()) {
+    let realtimeDebounce: NodeJS.Timeout | null = null;
+    firebaseServerStore.subscribeRealtimeSync((source) => {
+      markFirestoreCacheStale();
+      if (realtimeDebounce) clearTimeout(realtimeDebounce);
+      realtimeDebounce = setTimeout(async () => {
+        await refreshStateFromFirestore(true);
+        broadcastLibrarySyncEvent(`firestore_${source}`);
+      }, 150);
+    });
+  }
 
   const isProd = process.env.NODE_ENV === 'production';
   const httpServer = http.createServer(app);

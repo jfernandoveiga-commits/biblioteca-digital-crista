@@ -55,6 +55,7 @@ import {
   Mail,
 } from 'lucide-react';
 import { adminAuthService, AdminSystemStatus } from '../services/adminAuthService';
+import { subscribeToLibraryUpdates } from '../services/realtimeSyncService';
 import {
   ReadingTheme,
   LibraryFeaturesConfig,
@@ -347,11 +348,16 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   };
 
   useEffect(() => {
-    if (isAuthenticated) {
+    if (!isAuthenticated) return;
+    fetchStatus();
+    fetchReaders();
+    fetchFirebaseStatus();
+
+    const unsubscribe = subscribeToLibraryUpdates(null, () => {
       fetchStatus();
       fetchReaders();
-      fetchFirebaseStatus();
-    }
+    });
+    return unsubscribe;
   }, [isAuthenticated]);
 
   // Criação de novo PIN de Leitor
@@ -438,12 +444,26 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     const initialPerms: ReaderContentPermissions = { books: {} };
     libraryBooks.forEach((book) => {
       const readerBook = selectedReaderDetails.contentPermissions?.books?.[book.id];
+      const globalBook = contentAvailability.books?.[book.id];
+      const bookEnabled =
+        typeof readerBook?.enabled === 'boolean'
+          ? readerBook.enabled
+          : globalBook
+          ? globalBook.enabled !== false
+          : false;
+
       const chMap: Record<string, boolean> = {};
       book.chapters.forEach((ch) => {
-        chMap[ch.id] = readerBook?.chapters?.[ch.id] !== false;
+        if (typeof readerBook?.chapters?.[ch.id] === 'boolean') {
+          chMap[ch.id] = readerBook.chapters[ch.id] === true;
+        } else {
+          chMap[ch.id] = Boolean(
+            globalBook && globalBook.enabled !== false && globalBook.chapters?.[ch.id] === true
+          );
+        }
       });
       initialPerms.books[book.id] = {
-        enabled: readerBook?.enabled !== false,
+        enabled: bookEnabled,
         chapters: chMap,
       };
     });

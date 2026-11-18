@@ -37,6 +37,9 @@ export interface VerifyPinResult {
   hasProfile?: boolean;
   requiresRegistration?: boolean;
   readerProfile?: ReaderProfile | null;
+  features?: LibraryFeaturesConfig;
+  contentAvailability?: ContentAvailabilityConfig;
+  chapterHeaderImages?: Record<string, string>;
 }
 
 export interface SessionStatus {
@@ -170,6 +173,9 @@ export const authService = {
           hasProfile: data.hasProfile,
           requiresRegistration: data.requiresRegistration ?? !data.hasProfile,
           readerProfile: data.readerProfile,
+          features: data.features,
+          contentAvailability: data.contentAvailability,
+          chapterHeaderImages: data.chapterHeaderImages,
         };
       }
 
