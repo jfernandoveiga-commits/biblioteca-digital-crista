@@ -39,6 +39,7 @@ import { parseBibleReference } from '../services/bibleService';
 import { bookmarkStorageService } from '../services/bookmarkStorageService';
 import { audioSpeechService, AudioPlaybackState, AudioSpeedRate } from '../services/audioSpeechService';
 import { smartBookmarkService, SmartBookmark } from '../services/smartBookmarkService';
+import { adminAuthService } from '../services/adminAuthService';
 
 interface ChapterReaderProps {
   book: Book;
@@ -58,10 +59,12 @@ interface ChapterReaderProps {
   isAdmin?: boolean;
   onNavigateToAdmin?: () => void;
   features?: LibraryFeaturesConfig;
+  serverChapterHeaderImages?: Record<string, string>;
+  onChapterImagesUpdated?: (images: Record<string, string>) => void;
 }
 /**
  * Otimiza e redimensiona arquivos de imagem enviados para o capítulo,
- * gerando um Data URL de alta fidelidade e tamanho controlado.
+ * gerando um Data URL de alta fidelidade e tamanho compatível com persistência na nuvem.
  */
 function processImageFile(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -69,8 +72,8 @@ function processImageFile(file: File): Promise<string> {
     reader.onload = (event) => {
       const img = new window.Image();
       img.onload = () => {
-        const maxWidth = 1600;
-        const maxHeight = 1200;
+        const maxWidth = 1280;
+        const maxHeight = 960;
         let { width, height } = img;
 
         if (width > maxWidth || height > maxHeight) {
@@ -93,7 +96,11 @@ function processImageFile(file: File): Promise<string> {
         }
 
         ctx.drawImage(img, 0, 0, width, height);
-        const dataUrl = canvas.toDataURL('image/jpeg', 0.88);
+        const qualities = [0.85, 0.72, 0.58];
+        let dataUrl = canvas.toDataURL('image/jpeg', qualities[0]);
+        for (let i = 1; i < qualities.length && dataUrl.length > 480000; i++) {
+          dataUrl = canvas.toDataURL('image/jpeg', qualities[i]);
+        }
         resolve(dataUrl);
       };
       img.onerror = () => {
@@ -124,6 +131,8 @@ export const ChapterReader: React.FC<ChapterReaderProps> = ({
   isAdmin = false,
   onNavigateToAdmin,
   features,
+  serverChapterHeaderImages,
+  onChapterImagesUpdated,
 }) => {
   const contentRef = useRef<HTMLElement>(null);
   const paragraphRefs = useRef<(HTMLParagraphElement | null)[]>([]);
@@ -522,35 +531,68 @@ export const ChapterReader: React.FC<ChapterReaderProps> = ({
     }
   });
 
-  const [imageNotice, setImageNotice] = useState<string | null>(null);
+  const [imageNotice, setImageNotice] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [isUrlModalOpen, setIsUrlModalOpen] = useState(false);
   const [urlInput, setUrlInput] = useState('');
   const [isProcessingImage, setIsProcessingImage] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Sincroniza ao trocar de capítulo ou livro
+  // Sincroniza imagem vinda do estado global (quando atualizado em tempo real pelo App.tsx)
   useEffect(() => {
-    try {
-      const saved = localStorage.getItem(`bib_custom_image_${book.id}_${chapter.id}`);
-      if (saved) {
-        setCustomImage(saved);
-      } else {
-        setCustomImage(null);
+    if (!serverChapterHeaderImages) return;
+    const key = `${book.id}:${chapter.id}`;
+    const serverImg = serverChapterHeaderImages[key];
+    if (serverImg) {
+      setCustomImage(serverImg);
+      try {
+        localStorage.setItem(`bib_custom_image_${book.id}_${chapter.id}`, serverImg);
+      } catch {
+        // ignore quota error
       }
+    }
+  }, [book.id, chapter.id, serverChapterHeaderImages]);
+
+  // Sincroniza ao trocar de capítulo ou livro buscando sempre a versão atualizada sem cache no servidor
+  useEffect(() => {
+    const key = `${book.id}:${chapter.id}`;
+    const storageKey = `bib_custom_image_${book.id}_${chapter.id}`;
+
+    try {
+      const saved = serverChapterHeaderImages?.[key] || localStorage.getItem(storageKey);
+      setCustomImage(saved || null);
     } catch {
-      setCustomImage(null);
+      setCustomImage(serverChapterHeaderImages?.[key] || null);
     }
 
-    // Consulta imagem configurada pelo administrador no servidor (se houver)
-    fetch('/api/library/config')
+    let cancelled = false;
+    fetch('/api/library/config', { method: 'GET', cache: 'no-store' })
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
-        const key = `${book.id}:${chapter.id}`;
-        if (data?.chapterHeaderImages?.[key]) {
-          setCustomImage(data.chapterHeaderImages[key]);
+        if (cancelled || !data) return;
+        const imagesMap: Record<string, string> = data.chapterHeaderImages || {};
+        onChapterImagesUpdated?.(imagesMap);
+        const serverImg = imagesMap[key];
+        if (serverImg) {
+          setCustomImage(serverImg);
+          try {
+            localStorage.setItem(storageKey, serverImg);
+          } catch {
+            // ignore quota error
+          }
+        } else {
+          setCustomImage(null);
+          try {
+            localStorage.removeItem(storageKey);
+          } catch {
+            // ignore
+          }
         }
       })
       .catch(() => {});
+
+    return () => {
+      cancelled = true;
+    };
   }, [book.id, chapter.id]);
 
   // Prioriza headerImage e utiliza chapterImage como fallback
@@ -564,6 +606,23 @@ export const ChapterReader: React.FC<ChapterReaderProps> = ({
     setIsProcessingImage(true);
     try {
       const processedDataUrl = await processImageFile(file);
+
+      // Sincroniza com o servidor e Cloud Firestore quando o administrador estiver autenticado
+      if (isAdmin) {
+        const res = await adminAuthService.saveChapterImage(book.id, chapter.id, processedDataUrl);
+        if (!res.success) {
+          setImageNotice({
+            type: 'error',
+            text: res.error || 'Falha ao sincronizar imagem com o servidor. Faça login como admin novamente.',
+          });
+          setTimeout(() => setImageNotice(null), 5000);
+          return;
+        }
+        if (res.chapterHeaderImages) {
+          onChapterImagesUpdated?.(res.chapterHeaderImages);
+        }
+      }
+
       setCustomImage(processedDataUrl);
       try {
         localStorage.setItem(imageStorageKey, processedDataUrl);
@@ -571,33 +630,18 @@ export const ChapterReader: React.FC<ChapterReaderProps> = ({
         console.warn('Storage quota exceeded, custom image kept in active session memory', err);
       }
 
-      // Sincroniza com o servidor se o administrador estiver autenticado
-      if (isAdmin) {
-        try {
-          const token = sessionStorage.getItem('bib_admin_token') || '';
-          await fetch('/api/admin/chapter-image', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              Authorization: `Bearer ${token}`,
-            },
-            body: JSON.stringify({
-              bookId: book.id,
-              chapterId: chapter.id,
-              headerImage: processedDataUrl,
-            }),
-          });
-        } catch (err) {
-          console.warn('Não foi possível sincronizar imagem no servidor:', err);
-        }
-      }
-
-      setImageNotice('Imagem do capítulo atualizada com sucesso!');
+      setImageNotice({
+        type: 'success',
+        text: 'Imagem salva e sincronizada para todos os dispositivos!',
+      });
       setTimeout(() => setImageNotice(null), 3500);
     } catch (err) {
       console.error('Erro ao processar imagem:', err);
-      setImageNotice('Não foi possível carregar a imagem. Tente outro arquivo.');
-      setTimeout(() => setImageNotice(null), 3500);
+      setImageNotice({
+        type: 'error',
+        text: 'Não foi possível carregar a imagem. Tente outro arquivo.',
+      });
+      setTimeout(() => setImageNotice(null), 4000);
     } finally {
       setIsProcessingImage(false);
       if (fileInputRef.current) {
@@ -609,70 +653,76 @@ export const ChapterReader: React.FC<ChapterReaderProps> = ({
   const handleApplyUrl = async () => {
     const trimmed = urlInput.trim();
     if (!trimmed) return;
-    setCustomImage(trimmed);
+
+    setIsProcessingImage(true);
     try {
-      localStorage.setItem(imageStorageKey, trimmed);
-    } catch (err) {
-      console.warn('Could not save custom image URL to storage', err);
-    }
-
-    // Salva no servidor para que todos os leitores recebam a alteração
-    if (isAdmin) {
-      try {
-        const token = sessionStorage.getItem('bib_admin_token') || '';
-        await fetch('/api/admin/chapter-image', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({
-            bookId: book.id,
-            chapterId: chapter.id,
-            headerImage: trimmed,
-          }),
-        });
-      } catch (err) {
-        console.warn('Não foi possível salvar imagem personalizada no servidor:', err);
+      if (isAdmin) {
+        const res = await adminAuthService.saveChapterImage(book.id, chapter.id, trimmed);
+        if (!res.success) {
+          setImageNotice({
+            type: 'error',
+            text: res.error || 'Não foi possível salvar o link da imagem no servidor.',
+          });
+          setTimeout(() => setImageNotice(null), 5000);
+          return;
+        }
+        if (res.chapterHeaderImages) {
+          onChapterImagesUpdated?.(res.chapterHeaderImages);
+        }
       }
-    }
 
-    setUrlInput('');
-    setIsUrlModalOpen(false);
-    setImageNotice('Link da imagem atualizado com sucesso para todos os leitores!');
-    setTimeout(() => setImageNotice(null), 3500);
+      setCustomImage(trimmed);
+      try {
+        localStorage.setItem(imageStorageKey, trimmed);
+      } catch (err) {
+        console.warn('Could not save custom image URL to storage', err);
+      }
+
+      setUrlInput('');
+      setIsUrlModalOpen(false);
+      setImageNotice({
+        type: 'success',
+        text: 'Link da imagem salvo e sincronizado para todos os dispositivos!',
+      });
+      setTimeout(() => setImageNotice(null), 3500);
+    } finally {
+      setIsProcessingImage(false);
+    }
   };
 
   const handleResetToDefault = async () => {
-    setCustomImage(null);
+    setIsProcessingImage(true);
     try {
-      localStorage.removeItem(imageStorageKey);
-    } catch {
-      // ignore
-    }
-
-    if (isAdmin) {
-      try {
-        const token = sessionStorage.getItem('bib_admin_token') || '';
-        await fetch('/api/admin/chapter-image', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({
-            bookId: book.id,
-            chapterId: chapter.id,
-            headerImage: null,
-          }),
-        });
-      } catch (err) {
-        console.warn('Não foi possível resetar imagem no servidor:', err);
+      if (isAdmin) {
+        const res = await adminAuthService.saveChapterImage(book.id, chapter.id, null);
+        if (!res.success) {
+          setImageNotice({
+            type: 'error',
+            text: res.error || 'Não foi possível remover a imagem no servidor.',
+          });
+          setTimeout(() => setImageNotice(null), 5000);
+          return;
+        }
+        if (res.chapterHeaderImages) {
+          onChapterImagesUpdated?.(res.chapterHeaderImages);
+        }
       }
-    }
 
-    setImageNotice(defaultIllustration ? 'Imagem original restaurada.' : 'Ilustração removida.');
-    setTimeout(() => setImageNotice(null), 3500);
+      setCustomImage(null);
+      try {
+        localStorage.removeItem(imageStorageKey);
+      } catch {
+        // ignore
+      }
+
+      setImageNotice({
+        type: 'success',
+        text: defaultIllustration ? 'Imagem original restaurada para todos os dispositivos.' : 'Ilustração removida em todos os dispositivos.',
+      });
+      setTimeout(() => setImageNotice(null), 3500);
+    } finally {
+      setIsProcessingImage(false);
+    }
   };
 
   return (
@@ -870,9 +920,17 @@ export const ChapterReader: React.FC<ChapterReaderProps> = ({
 
                 {/* Feedback toast de imagem (somente para administrador) */}
                 {isAdmin && imageNotice && (
-                  <div className="mb-3 inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-600 text-white shadow-md animate-in fade-in duration-200">
-                    <Check className="w-3.5 h-3.5" />
-                    <span>{imageNotice}</span>
+                  <div
+                    className={`mb-3 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold text-white shadow-md animate-in fade-in duration-200 ${
+                      imageNotice.type === 'error' ? 'bg-rose-600' : 'bg-emerald-600'
+                    }`}
+                  >
+                    {imageNotice.type === 'error' ? (
+                      <X className="w-3.5 h-3.5 shrink-0" />
+                    ) : (
+                      <Check className="w-3.5 h-3.5 shrink-0" />
+                    )}
+                    <span>{imageNotice.text}</span>
                   </div>
                 )}
 

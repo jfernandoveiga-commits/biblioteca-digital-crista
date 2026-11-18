@@ -95,6 +95,7 @@ export const adminAuthService = {
         method: 'GET',
         headers,
         credentials: 'include',
+        cache: 'no-store',
       });
 
       if (!response.ok) {
@@ -168,6 +169,7 @@ export const adminAuthService = {
         method: 'GET',
         headers: this.getAuthHeaders(),
         credentials: 'include',
+        cache: 'no-store',
       });
 
       if (!response.ok) {
@@ -310,6 +312,7 @@ export const adminAuthService = {
         method: 'GET',
         headers: this.getAuthHeaders(),
         credentials: 'include',
+        cache: 'no-store',
       });
 
       const data = await response.json();
@@ -376,6 +379,7 @@ export const adminAuthService = {
         method: 'GET',
         headers: this.getAuthHeaders(),
         credentials: 'include',
+        cache: 'no-store',
       });
 
       const data = await response.json();
@@ -451,6 +455,7 @@ export const adminAuthService = {
         method: 'GET',
         headers: this.getAuthHeaders(),
         credentials: 'include',
+        cache: 'no-store',
       });
 
       const data = await response.json();
@@ -923,5 +928,51 @@ export const adminAuthService = {
       };
     }
   },
+  async saveChapterImage(
+    bookId: string,
+    chapterId: string,
+    headerImage: string | null
+  ): Promise<{
+    success: boolean;
+    headerImage?: string | null;
+    chapterHeaderImages?: Record<string, string>;
+    message?: string;
+    error?: string;
+  }> {
+    try {
+      const response = await fetch('/api/admin/chapter-image', {
+        method: 'POST',
+        headers: this.getAuthHeaders(),
+        body: JSON.stringify({
+          bookId,
+          chapterId,
+          headerImage,
+        }),
+        credentials: 'include',
+      });
+
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || !data.success) {
+        return {
+          success: false,
+          error: data.error || `Falha ao salvar imagem no servidor (HTTP ${response.status}).`,
+        };
+      }
+
+      return {
+        success: true,
+        headerImage: data.headerImage || null,
+        chapterHeaderImages: data.chapterHeaderImages || {},
+        message: data.message,
+      };
+    } catch (err: any) {
+      console.error('[adminAuthService] Erro ao salvar imagem do capítulo:', err);
+      return {
+        success: false,
+        error: 'Erro de conexão ao salvar a imagem do capítulo no servidor.',
+      };
+    }
+  },
 };
+
 

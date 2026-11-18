@@ -54,6 +54,7 @@ export interface SessionStatus {
   readerProfile?: ReaderProfile | null;
   features?: LibraryFeaturesConfig;
   contentAvailability?: ContentAvailabilityConfig;
+  chapterHeaderImages?: Record<string, string>;
 }
 
 export const authService = {
@@ -111,6 +112,7 @@ export const authService = {
         method: 'GET',
         headers,
         credentials: 'include',
+        cache: 'no-store',
       });
 
       if (!response.ok) {
@@ -366,16 +368,21 @@ export const authService = {
   async getLibraryConfig(): Promise<{
     features: LibraryFeaturesConfig;
     contentAvailability: ContentAvailabilityConfig;
+    chapterHeaderImages: Record<string, string>;
     isLibraryLocked: boolean;
     lockReason?: string;
   }> {
     try {
-      const response = await fetch('/api/library/config');
+      const response = await fetch('/api/library/config', {
+        method: 'GET',
+        cache: 'no-store',
+      });
       if (response.ok) {
         const data = await response.json();
         return {
           features: data.features || DEFAULT_LIBRARY_FEATURES,
           contentAvailability: data.contentAvailability || { books: {} },
+          chapterHeaderImages: data.chapterHeaderImages || {},
           isLibraryLocked: Boolean(data.isLibraryLocked),
           lockReason: data.lockReason || '',
         };
@@ -387,6 +394,7 @@ export const authService = {
     return {
       features: DEFAULT_LIBRARY_FEATURES,
       contentAvailability: { books: {} },
+      chapterHeaderImages: {},
       isLibraryLocked: false,
     };
   },
@@ -414,6 +422,7 @@ export const authService = {
         method: 'GET',
         headers,
         credentials: 'include',
+        cache: 'no-store',
       });
       const data = await response.json();
       return {

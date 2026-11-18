@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
 import {
   BookOpen,
   User,
@@ -35,6 +35,7 @@ interface ReaderRegistrationScreenProps {
   initialName?: string;
   onRegistrationSuccess: (profile: ReaderProfile) => void;
   onLogout: () => void;
+  onNavigateToAdmin?: () => void;
 }
 
 const GENDER_OPTIONS: ReaderGender[] = [
@@ -58,7 +59,26 @@ export const ReaderRegistrationScreen: React.FC<ReaderRegistrationScreenProps> =
   initialName = '',
   onRegistrationSuccess,
   onLogout,
+  onNavigateToAdmin,
 }) => {
+  const secretClickCountRef = useRef<number>(0);
+  const lastSecretClickTimeRef = useRef<number>(0);
+
+  const handleLogoSecretClick = () => {
+    if (!onNavigateToAdmin) return;
+    const now = Date.now();
+    if (now - lastSecretClickTimeRef.current > 1500) {
+      secretClickCountRef.current = 1;
+    } else {
+      secretClickCountRef.current += 1;
+    }
+    lastSecretClickTimeRef.current = now;
+
+    if (secretClickCountRef.current >= 5) {
+      secretClickCountRef.current = 0;
+      onNavigateToAdmin();
+    }
+  };
   // Campos do formulário - preenche o nome inicial se informado pelo administrador
   const [fullName, setFullName] = useState<string>(initialName || '');
   const [phone, setPhone] = useState<string>('');
@@ -233,15 +253,18 @@ export const ReaderRegistrationScreen: React.FC<ReaderRegistrationScreenProps> =
         >
           {/* Cabeçalho */}
           <div className="text-center mb-6">
-            <div
-              className={`w-14 h-14 mx-auto rounded-full flex items-center justify-center mb-3.5 transition-transform duration-300 ${
+            <button
+              type="button"
+              onClick={handleLogoSecretClick}
+              aria-label="Logotipo Biblioteca Digital"
+              className={`w-14 h-14 mx-auto rounded-full flex items-center justify-center mb-3.5 transition-transform duration-200 active:scale-95 touch-manipulation select-none focus:outline-none cursor-default ${
                 isDark
                   ? 'bg-zinc-800/80 text-amber-400 border border-zinc-700/60 shadow-inner'
                   : 'bg-stone-100 text-stone-700 border border-stone-200 shadow-xs'
               }`}
             >
-              <BookOpen className="w-6 h-6 stroke-[1.75]" />
-            </div>
+              <BookOpen className="w-6 h-6 stroke-[1.75] pointer-events-none" />
+            </button>
 
             <span
               className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-semibold tracking-wide uppercase mb-2 ${

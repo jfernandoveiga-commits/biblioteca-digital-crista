@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
 import {
   User,
   Mail,
@@ -26,12 +26,32 @@ import {
 interface SelfRegistrationScreenProps {
   theme?: ReadingTheme;
   onBackToLogin: () => void;
+  onNavigateToAdmin?: () => void;
 }
 
 export const SelfRegistrationScreen: React.FC<SelfRegistrationScreenProps> = ({
   theme = 'cream',
   onBackToLogin,
+  onNavigateToAdmin,
 }) => {
+  const secretClickCountRef = useRef<number>(0);
+  const lastSecretClickTimeRef = useRef<number>(0);
+
+  const handleLogoSecretClick = () => {
+    if (!onNavigateToAdmin) return;
+    const now = Date.now();
+    if (now - lastSecretClickTimeRef.current > 1500) {
+      secretClickCountRef.current = 1;
+    } else {
+      secretClickCountRef.current += 1;
+    }
+    lastSecretClickTimeRef.current = now;
+
+    if (secretClickCountRef.current >= 5) {
+      secretClickCountRef.current = 0;
+      onNavigateToAdmin();
+    }
+  };
   const [fullName, setFullName] = useState<string>('');
   const [email, setEmail] = useState<string>('');
   const [phone, setPhone] = useState<string>('');
@@ -196,13 +216,21 @@ export const SelfRegistrationScreen: React.FC<SelfRegistrationScreenProps> = ({
           {/* Cabeçalho */}
           <div className="text-center mb-6">
             <div className="mb-3.5 flex justify-center">
-              <img
-                src="/icon.svg"
-                alt="Logotipo Oficial da Biblioteca Digital"
-                width={64}
-                height={64}
-                className="w-14 h-14 sm:w-16 sm:h-16 rounded-2xl shadow-md shadow-stone-900/10 dark:shadow-black/50 border border-stone-200/80 dark:border-zinc-800 object-contain select-none"
-              />
+              <button
+                type="button"
+                onClick={handleLogoSecretClick}
+                aria-label="Logotipo Oficial da Biblioteca Digital"
+                className="p-0 border-0 bg-transparent rounded-2xl touch-manipulation select-none focus:outline-none cursor-default"
+              >
+                <img
+                  src="/icon.svg"
+                  alt="Logotipo Oficial da Biblioteca Digital"
+                  width={64}
+                  height={64}
+                  draggable={false}
+                  className="w-14 h-14 sm:w-16 sm:h-16 rounded-2xl shadow-md shadow-stone-900/10 dark:shadow-black/50 border border-stone-200/80 dark:border-zinc-800 object-contain select-none pointer-events-none active:scale-95 transition-transform"
+                />
+              </button>
             </div>
 
             <h1

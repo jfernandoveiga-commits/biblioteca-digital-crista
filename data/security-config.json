@@ -22,18 +22,18 @@
   "contentAvailability": {
     "books": {
       "entre-a-cruz-e-o-mundo": {
+        "enabled": true,
         "chapters": {
           "capitulo-2": false,
           "capitulo-1": true
-        },
-        "enabled": true
+        }
       },
       "e-ai-crente": {
         "chapters": {
-          "capitulo-2": true,
-          "capitulo-3": false,
           "capitulo-1": true,
-          "capitulo-4": false
+          "capitulo-4": false,
+          "capitulo-2": true,
+          "capitulo-3": false
         },
         "enabled": true
       }
@@ -59,17 +59,17 @@
       "profile": null,
       "contentPermissions": {
         "books": {
-          "entre-a-cruz-e-o-mundo": {
+          "e-ai-crente": {
             "enabled": true,
             "chapters": {
               "capitulo-2": false,
-              "capitulo-1": false
+              "capitulo-1": true
             }
           },
-          "e-ai-crente": {
+          "entre-a-cruz-e-o-mundo": {
             "chapters": {
-              "capitulo-2": false,
-              "capitulo-1": true
+              "capitulo-1": false,
+              "capitulo-2": false
             },
             "enabled": true
           }
@@ -93,21 +93,21 @@
       "notes": "",
       "hasProfile": true,
       "profile": {
-        "fullName": "Elaine Cristina Carchano Garcia",
-        "birthDate": "1977-01-29",
         "gender": "Feminino",
-        "phone": "19999956596",
         "phoneFormatted": "(19) 99995-6596",
-        "updatedAt": "2026-10-29T12:43:21.654Z",
         "registeredAt": "2026-10-29T12:43:21.654Z",
-        "maritalStatus": "Casado(a)"
+        "fullName": "Elaine Cristina Carchano Garcia",
+        "updatedAt": "2026-10-29T12:43:21.654Z",
+        "maritalStatus": "Casado(a)",
+        "phone": "19999956596",
+        "birthDate": "1977-01-29"
       },
       "contentPermissions": {
         "books": {
           "entre-a-cruz-e-o-mundo": {
             "chapters": {
-              "capitulo-1": true,
-              "capitulo-2": true
+              "capitulo-2": true,
+              "capitulo-1": true
             },
             "enabled": true
           },
@@ -116,8 +116,8 @@
             "chapters": {
               "capitulo-1": true,
               "capitulo-4": true,
-              "capitulo-2": true,
-              "capitulo-3": true
+              "capitulo-3": true,
+              "capitulo-2": true
             }
           }
         }
@@ -140,21 +140,23 @@
       "notes": "",
       "hasProfile": true,
       "profile": {
-        "updatedAt": "2026-10-22T17:11:31.584Z",
-        "maritalStatus": "Divorciado(a)",
-        "registeredAt": "2026-10-19T17:59:23.251Z",
         "phoneFormatted": "(19) 99525-1590",
-        "gender": "Feminino",
-        "fullName": "Patrícia Nascimento",
+        "updatedAt": "2026-10-22T17:11:31.584Z",
         "phone": "19995251590",
-        "birthDate": "1992-03-28"
+        "registeredAt": "2026-10-19T17:59:23.251Z",
+        "maritalStatus": "Divorciado(a)",
+        "gender": "Feminino",
+        "birthDate": "1992-03-28",
+        "fullName": "Patrícia Nascimento"
       },
       "contentPermissions": {
         "books": {
           "e-ai-crente": {
             "chapters": {
               "capitulo-1": true,
-              "capitulo-2": false
+              "capitulo-4": true,
+              "capitulo-3": true,
+              "capitulo-2": true
             },
             "enabled": true
           },
@@ -162,12 +164,12 @@
             "enabled": true,
             "chapters": {
               "capitulo-1": true,
-              "capitulo-2": false
+              "capitulo-2": true
             }
           }
         }
       },
-      "updatedAt": "2026-10-22T18:14:12.473Z"
+      "updatedAt": "2026-11-17T16:46:32.176Z"
     },
     {
       "id": "reader-1791893732551-e38689bb",
@@ -181,40 +183,40 @@
       "approvedAt": null,
       "createdAt": "2026-10-13T12:15:32.551Z",
       "expiresAt": null,
-      "lastUsedAt": "2026-11-17T12:38:38.345Z",
+      "lastUsedAt": "2026-11-17T17:11:46.424Z",
       "notes": "Leitora teste",
       "hasProfile": true,
       "profile": {
+        "maritalStatus": "Casado(a)",
+        "updatedAt": "2026-10-16T16:14:53.626Z",
+        "registeredAt": "2026-10-16T16:14:53.626Z",
+        "fullName": "Ana Clara Carchano Garcia",
+        "birthDate": "2006-04-11",
         "gender": "Feminino",
         "phone": "19997601107",
-        "birthDate": "2006-04-11",
-        "maritalStatus": "Casado(a)",
-        "phoneFormatted": "(19) 99760-1107",
-        "fullName": "Ana Clara Carchano Garcia",
-        "updatedAt": "2026-10-16T16:14:53.626Z",
-        "registeredAt": "2026-10-16T16:14:53.626Z"
+        "phoneFormatted": "(19) 99760-1107"
       },
       "contentPermissions": {
         "books": {
-          "entre-a-cruz-e-o-mundo": {
-            "chapters": {
-              "capitulo-1": true,
-              "capitulo-2": true
-            },
-            "enabled": true
-          },
           "e-ai-crente": {
+            "enabled": true,
             "chapters": {
               "capitulo-4": true,
-              "capitulo-1": true,
+              "capitulo-2": true,
               "capitulo-3": true,
-              "capitulo-2": true
+              "capitulo-1": true
+            }
+          },
+          "entre-a-cruz-e-o-mundo": {
+            "chapters": {
+              "capitulo-2": true,
+              "capitulo-1": true
             },
             "enabled": true
           }
         }
       },
-      "updatedAt": "2026-11-17T12:38:38.346Z"
+      "updatedAt": "2026-11-17T17:11:46.426Z"
     },
     {
       "id": "access-initial-default",
@@ -232,22 +234,22 @@
       "notes": "Acesso inicial configurado pelo sistema",
       "hasProfile": true,
       "profile": {
-        "updatedAt": "2026-10-13T12:12:21.075Z",
-        "gender": "Masculino",
         "phone": "19981026699",
-        "maritalStatus": "Casado(a)",
         "fullName": "Fernando Veiga",
+        "updatedAt": "2026-10-13T12:12:21.075Z",
+        "phoneFormatted": "(19) 98102-6699",
+        "maritalStatus": "Casado(a)",
         "registeredAt": "2026-10-13T12:12:21.075Z",
-        "birthDate": "1967-04-02",
-        "phoneFormatted": "(19) 98102-6699"
+        "gender": "Masculino",
+        "birthDate": "1967-04-02"
       },
       "contentPermissions": {
         "books": {
           "entre-a-cruz-e-o-mundo": {
             "enabled": true,
             "chapters": {
-              "capitulo-1": true,
-              "capitulo-2": true
+              "capitulo-2": true,
+              "capitulo-1": true
             }
           },
           "e-ai-crente": {

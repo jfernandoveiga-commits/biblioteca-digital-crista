@@ -85,6 +85,7 @@ export default function App() {
   // Funcionalidades e Disponibilidade gerenciadas pelo Administrador
   const [features, setFeatures] = useState<LibraryFeaturesConfig>(DEFAULT_LIBRARY_FEATURES);
   const [contentAvailability, setContentAvailability] = useState<ContentAvailabilityConfig>(DEFAULT_CONTENT_AVAILABILITY);
+  const [chapterHeaderImages, setChapterHeaderImages] = useState<Record<string, string>>({});
 
   // Livro e Capítulo Ativos na Leitura (persistidos para restaurar após recarregar a página ou reiniciar)
   const [currentBookId, setCurrentBookId] = useState<string>(() => {
@@ -150,7 +151,7 @@ export default function App() {
 
   const handleModalLogoSecretClick = () => {
     const now = Date.now();
-    if (now - modalSecretLastClickRef.current > 650) {
+    if (now - modalSecretLastClickRef.current > 1500) {
       modalSecretClickCountRef.current = 1;
     } else {
       modalSecretClickCountRef.current += 1;
@@ -168,7 +169,7 @@ export default function App() {
   const [activePassageTarget, setActivePassageTarget] = useState<BibleReferenceTarget | null>(null);
   const [activeBibleReaderTarget, setActiveBibleReaderTarget] = useState<BibleReferenceTarget | null>(null);
 
-  // Busca configurações da biblioteca e status de sessão no servidor
+  // Busca configurações da biblioteca e status de sessão no servidor e sincroniza em tempo real entre dispositivos
   useEffect(() => {
     let isMounted = true;
     const loadSessionAndConfig = async () => {
@@ -186,8 +187,12 @@ export default function App() {
           // ignora
         }
 
-        // 2. Consulta status de sessão da biblioteca
-        const session = await authService.checkSession();
+        // 2. Consulta status de sessão da biblioteca e configurações mais recentes do Firestore
+        const [session, config] = await Promise.all([
+          authService.checkSession(),
+          authService.getLibraryConfig(),
+        ]);
+
         if (isMounted) {
           if (isUserAdmin || session.isAdmin) {
             setIsAdminSession(true);
@@ -225,21 +230,13 @@ export default function App() {
               setReaderName('');
             }
           }
-          if (session.features) {
-            setFeatures(session.features);
-          }
-          if (session.contentAvailability) {
-            setContentAvailability(session.contentAvailability);
-          }
-        }
 
-        // Se não vieram na sessão, busca do endpoint público de configurações
-        if (!session.features || !session.contentAvailability) {
-          const config = await authService.getLibraryConfig();
-          if (isMounted) {
-            if (config.features) setFeatures(config.features);
-            if (config.contentAvailability) setContentAvailability(config.contentAvailability);
-          }
+          const latestFeatures = session.features || config.features;
+          const latestContent = session.contentAvailability || config.contentAvailability;
+          const latestImages = config.chapterHeaderImages || session.chapterHeaderImages || {};
+          if (latestFeatures) setFeatures(latestFeatures);
+          if (latestContent) setContentAvailability(latestContent);
+          setChapterHeaderImages(latestImages);
         }
       } catch {
         if (isMounted) {
@@ -256,8 +253,26 @@ export default function App() {
     };
 
     loadSessionAndConfig();
+
+    const handleVisibilityOrFocus = () => {
+      if (document.visibilityState === 'visible') {
+        loadSessionAndConfig();
+      }
+    };
+    window.addEventListener('focus', handleVisibilityOrFocus);
+    document.addEventListener('visibilitychange', handleVisibilityOrFocus);
+
+    const syncInterval = window.setInterval(() => {
+      if (document.visibilityState === 'visible') {
+        loadSessionAndConfig();
+      }
+    }, 15000);
+
     return () => {
       isMounted = false;
+      window.removeEventListener('focus', handleVisibilityOrFocus);
+      document.removeEventListener('visibilitychange', handleVisibilityOrFocus);
+      window.clearInterval(syncInterval);
     };
   }, [currentRoute]);
 
@@ -430,9 +445,12 @@ export default function App() {
       <AdminPanel
         theme={theme}
         onNavigateToLibrary={() => {
-          setIsAdminSession(true);
-          setIsAuthenticated(true);
-          setHasProfile(true);
+          const hasAdmin = Boolean(adminAuthService.getToken());
+          setIsAdminSession(hasAdmin);
+          if (hasAdmin) {
+            setIsAuthenticated(true);
+            setHasProfile(true);
+          }
           navigateTo('/');
         }}
       />
@@ -445,6 +463,7 @@ export default function App() {
       <SelfRegistrationScreen
         theme={theme}
         onBackToLogin={() => navigateTo('/')}
+        onNavigateToAdmin={() => navigateTo('/admin')}
       />
     );
   }
@@ -511,6 +530,7 @@ export default function App() {
             setReaderName(profile.fullName);
           }}
           onLogout={handleLogout}
+          onNavigateToAdmin={() => navigateTo('/admin')}
         />
       );
     }
@@ -643,6 +663,8 @@ export default function App() {
               onNextChapter={handleNextChapter}
               onPreviousChapter={handlePreviousChapter}
               features={features}
+              serverChapterHeaderImages={chapterHeaderImages}
+              onChapterImagesUpdated={setChapterHeaderImages}
             />
           )}
         </>
@@ -696,14 +718,21 @@ export default function App() {
 
             <div className="overflow-y-auto pr-1 space-y-4">
               <div className="flex items-center gap-3">
-                <img
-                  src="/icon.svg"
-                  alt="Logotipo Oficial da Biblioteca Digital"
-                  width={40}
-                  height={40}
+                <button
+                  type="button"
                   onClick={handleModalLogoSecretClick}
-                  className="w-10 h-10 rounded-xl object-contain shadow-xs border border-stone-200/80 dark:border-zinc-800 shrink-0 select-none cursor-default active:scale-95 transition-transform"
-                />
+                  aria-label="Logotipo Oficial da Biblioteca Digital"
+                  className="p-0 border-0 bg-transparent rounded-xl shrink-0 touch-manipulation select-none focus:outline-none cursor-default"
+                >
+                  <img
+                    src="/icon.svg"
+                    alt="Logotipo Oficial da Biblioteca Digital"
+                    width={40}
+                    height={40}
+                    draggable={false}
+                    className="w-10 h-10 rounded-xl object-contain shadow-xs border border-stone-200/80 dark:border-zinc-800 select-none pointer-events-none active:scale-95 transition-transform"
+                  />
+                </button>
                 <div>
                   <h2 id="library-modal-title" className="text-lg font-serif font-bold text-stone-900 dark:text-zinc-50">
                     Biblioteca Digital

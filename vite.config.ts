@@ -55,8 +55,16 @@ export default defineConfig(() => {
           ],
         },
         workbox: {
+          cleanupOutdatedCaches: true,
+          skipWaiting: true,
+          clientsClaim: true,
+          navigateFallbackDenylist: [/^\/api\//],
           globPatterns: ['**/*.{js,css,html,ico,png,svg,json,woff,woff2}'],
           runtimeCaching: [
+            {
+              urlPattern: /^\/api\/.*/i,
+              handler: 'NetworkOnly',
+            },
             {
               urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/i,
               handler: 'CacheFirst',
@@ -102,7 +110,7 @@ export default defineConfig(() => {
           ],
         },
         devOptions: {
-          enabled: true, // Ativa service worker também em desenvolvimento/preview
+          enabled: false,
           type: 'module',
         },
       }),

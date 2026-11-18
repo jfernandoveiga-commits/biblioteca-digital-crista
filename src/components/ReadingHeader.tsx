@@ -94,7 +94,7 @@ export const ReadingHeader: React.FC<ReadingHeaderProps> = ({
   const handleSecretHeaderClick = () => {
     if (!onNavigateToAdmin) return;
     const now = Date.now();
-    if (now - lastSecretClickTimeRef.current > 650) {
+    if (now - lastSecretClickTimeRef.current > 1500) {
       secretClickCountRef.current = 1;
     } else {
       secretClickCountRef.current += 1;
@@ -166,6 +166,23 @@ export const ReadingHeader: React.FC<ReadingHeaderProps> = ({
             <span className="font-medium hidden md:inline">Biblioteca</span>
           </button>
 
+          {/* Botão discreto com o logotipo para atalho de 5 cliques */}
+          <button
+            type="button"
+            onClick={handleSecretHeaderClick}
+            aria-label="Logotipo Biblioteca Digital"
+            className="hidden sm:inline-flex items-center justify-center p-0.5 rounded-lg touch-manipulation select-none focus:outline-none cursor-default active:scale-95 transition-transform"
+          >
+            <img
+              src="/icon.svg"
+              alt=""
+              width={24}
+              height={24}
+              draggable={false}
+              className="w-6 h-6 rounded-md object-contain pointer-events-none"
+            />
+          </button>
+
           {/* Botão de retorno ao Painel do Administrador (exibido exclusivamente quando sessão admin ativa) */}
           {isAdmin && onNavigateToAdmin && (
             <button
@@ -184,7 +201,7 @@ export const ReadingHeader: React.FC<ReadingHeaderProps> = ({
         {!isSearchOpen ? (
           <div
             onClick={handleSecretHeaderClick}
-            className="flex-1 min-w-0 px-1 sm:px-4 text-center select-none cursor-default active:opacity-90 transition-opacity"
+            className="flex-1 min-w-0 px-1 sm:px-4 text-center select-none touch-manipulation cursor-default active:opacity-90 transition-opacity"
           >
             {bookTitle && (
               <div className="text-[9px] sm:text-[11px] font-sans font-medium uppercase tracking-[0.14em] sm:tracking-[0.2em] text-stone-400 dark:text-zinc-400 truncate leading-tight">

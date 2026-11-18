@@ -70,8 +70,8 @@ export const PinLockScreen: React.FC<PinLockScreenProps> = ({
 
   const handleLogoSecretClick = () => {
     const now = Date.now();
-    // Reseta a contagem se o tempo entre cliques for superior a 650ms
-    if (now - lastSecretClickTimeRef.current > 650) {
+    // Reseta a contagem se o tempo entre cliques for superior a 1500ms (tolerante a toques móveis)
+    if (now - lastSecretClickTimeRef.current > 1500) {
       secretClickCountRef.current = 1;
     } else {
       secretClickCountRef.current += 1;
@@ -159,21 +159,29 @@ export const PinLockScreen: React.FC<PinLockScreenProps> = ({
         >
           {/* Cabeçalho da Biblioteca */}
           <div className="text-center mb-7">
-            {/* Logotipo Oficial da Biblioteca Digital (com atalho secreto de 5 cliques rápidos) */}
+            {/* Logotipo Oficial da Biblioteca Digital (com atalho secreto de 5 cliques) */}
             <div className="mb-4 flex justify-center">
-              <img
-                src="/icon.svg"
-                alt="Logotipo Oficial da Biblioteca Digital"
-                width={72}
-                height={72}
+              <button
+                type="button"
                 onClick={handleLogoSecretClick}
-                className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl shadow-md shadow-stone-900/10 dark:shadow-black/50 border border-stone-200/80 dark:border-zinc-800 object-contain select-none transition-transform duration-300 hover:scale-105 active:scale-95 cursor-default"
-                loading="eager"
-              />
+                aria-label="Logotipo Oficial da Biblioteca Digital"
+                className="p-0 border-0 bg-transparent rounded-2xl touch-manipulation select-none focus:outline-none cursor-default"
+              >
+                <img
+                  src="/icon.svg"
+                  alt="Logotipo Oficial da Biblioteca Digital"
+                  width={72}
+                  height={72}
+                  draggable={false}
+                  className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl shadow-md shadow-stone-900/10 dark:shadow-black/50 border border-stone-200/80 dark:border-zinc-800 object-contain select-none transition-transform duration-200 hover:scale-105 active:scale-95 pointer-events-none"
+                  loading="eager"
+                />
+              </button>
             </div>
 
             <h1
-              className={`font-serif text-2xl sm:text-3xl font-bold tracking-tight mb-2 ${
+              onClick={handleLogoSecretClick}
+              className={`font-serif text-2xl sm:text-3xl font-bold tracking-tight mb-2 select-none touch-manipulation ${
                 isDark ? 'text-zinc-50' : 'text-stone-900'
               }`}
             >

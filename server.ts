@@ -318,50 +318,87 @@ function saveSecurityConfig(config: SecurityConfig): void {
 // Instância ativa em memória
 const securityConfig: SecurityConfig = loadOrCreateSecurityConfig();
 
+let lastFirestoreRefreshAt = 0;
+let firestoreRefreshInFlight: Promise<void> | null = null;
+const FIRESTORE_SYNC_TTL_MS = 3000;
+
+function normalizeBooksMap(rawBooks: Record<string, any> | undefined): ContentAvailabilityConfig {
+  const cleanedBooks: Record<string, any> = {};
+  if (rawBooks && typeof rawBooks === 'object') {
+    for (const [key, val] of Object.entries(rawBooks)) {
+      const normKey = (key === 'e-ai-crentes-ok' || key === 'e-ai-crentes') ? 'e-ai-crente' : key;
+      cleanedBooks[normKey] = {
+        ...(cleanedBooks[normKey] || {}),
+        ...(val as any),
+        chapters: {
+          ...(cleanedBooks[normKey]?.chapters || {}),
+          ...((val as any)?.chapters || {}),
+        },
+      };
+    }
+  }
+  return {
+    books: {
+      ...DEFAULT_CONTENT_AVAILABILITY.books,
+      ...cleanedBooks,
+    },
+  };
+}
+
+function invalidateFirestoreCache(): void {
+  lastFirestoreRefreshAt = Date.now();
+}
+
 /**
- * Sincronização inicial inteligente com o Firebase Cloud Firestore:
- * - Prioriza os dados do Cloud Firestore se existentes (preserva edições em nuvem).
- * - Se o Firestore estiver vazio (primeira execução), migra automaticamente os dados locais.
- * - Mantém o arquivo local como cache de contingência e backup.
+ * Sincronização inicial e sob demanda com o Firebase Cloud Firestore:
+ * - Prioriza os dados do Cloud Firestore como fonte única da verdade entre dispositivos e instâncias.
+ * - Carrega configurações, imagens de capítulos e acessos dos leitores independentemente.
+ * - Se o Firestore estiver completamente vazio na primeira execução, migra automaticamente os dados locais.
  */
-async function syncWithFirestore(): Promise<void> {
-  try {
-    if (!firebaseServerStore.isReady()) {
-      firebaseServerStore.init();
-    }
-    if (!firebaseServerStore.isReady()) {
-      console.log('[Firebase] Operando em modo contingência local.');
-      return;
-    }
+async function refreshStateFromFirestore(force = false): Promise<void> {
+  if (!firebaseServerStore.isReady()) {
+    firebaseServerStore.init();
+  }
+  if (!firebaseServerStore.isReady()) return;
 
-    const cloudReaders = await firebaseServerStore.loadAllReaderAccesses();
-    if (cloudReaders.length > 0) {
-      console.log(`[Firebase] Sincronizando ${cloudReaders.length} leitores do Cloud Firestore...`);
-      const map = new Map<string, ReaderAccessRecord>();
-      for (const r of cloudReaders) {
-        if (r.pinHash && r.pinSalt) {
-          map.set(r.id, r as ReaderAccessRecord);
+  const now = Date.now();
+  if (!force && now - lastFirestoreRefreshAt < FIRESTORE_SYNC_TTL_MS) {
+    return;
+  }
+
+  if (firestoreRefreshInFlight) {
+    return firestoreRefreshInFlight;
+  }
+
+  firestoreRefreshInFlight = (async () => {
+    try {
+      const [cloudReaders, cloudConfig, cloudImages] = await Promise.all([
+        firebaseServerStore.loadAllReaderAccesses().catch(() => [] as ReaderAccessRecord[]),
+        firebaseServerStore.loadSystemConfig().catch(() => null),
+        firebaseServerStore.loadAllChapterImages().catch(() => ({} as Record<string, string>)),
+      ]);
+
+      if (cloudReaders.length > 0) {
+        const map = new Map<string, ReaderAccessRecord>();
+        for (const r of cloudReaders) {
+          if (r.pinHash && r.pinSalt) {
+            map.set(r.id, r as ReaderAccessRecord);
+          }
         }
+        securityConfig.readerAccesses = Array.from(map.values()).sort(
+          (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+        );
       }
 
-      // Preserva eventuais leitores locais novos que não estejam no Firestore e os salva
-      for (const local of securityConfig.readerAccesses || []) {
-        if (!map.has(local.id)) {
-          map.set(local.id, local);
-          await firebaseServerStore.saveReaderAccess(local).catch(() => {});
-        }
-      }
-
-      securityConfig.readerAccesses = Array.from(map.values());
-      securityConfig.readerAccesses.sort(
-        (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-      );
-
-      // Sincroniza configurações gerais se presentes
-      const cloudConfig = await firebaseServerStore.loadSystemConfig();
       if (cloudConfig) {
         securityConfig.isLibraryLocked = Boolean(cloudConfig.isLibraryLocked);
         securityConfig.lockReason = cloudConfig.lockReason || '';
+        if (typeof cloudConfig.sessionsRevokedBefore === 'number') {
+          securityConfig.sessionsRevokedBefore = Math.max(
+            securityConfig.sessionsRevokedBefore || 0,
+            cloudConfig.sessionsRevokedBefore
+          );
+        }
         securityConfig.features = {
           ...DEFAULT_FEATURES,
           ...(cloudConfig.features || {}),
@@ -374,36 +411,115 @@ async function syncWithFirestore(): Promise<void> {
           securityConfig.adminPasswordHash = cloudConfig.adminPasswordHash;
           securityConfig.adminPasswordSalt = cloudConfig.adminPasswordSalt;
         }
-        await syncSystemConfigToFirestore();
-        const rawCloudBooks = cloudConfig.contentAvailability?.books || {};
-        const cleanedCloudBooks: Record<string, any> = {};
-        for (const [key, val] of Object.entries(rawCloudBooks)) {
-          const normKey = (key === 'e-ai-crentes-ok' || key === 'e-ai-crentes') ? 'e-ai-crente' : key;
-          cleanedCloudBooks[normKey] = {
-            ...(cleanedCloudBooks[normKey] || {}),
-            ...(val as any),
-            chapters: {
-              ...(cleanedCloudBooks[normKey]?.chapters || {}),
-              ...((val as any).chapters || {}),
-            },
-          };
-        }
-
-        securityConfig.contentAvailability = {
-          books: {
-            ...DEFAULT_CONTENT_AVAILABILITY.books,
-            ...cleanedCloudBooks,
-          },
-        };
-        if (cloudConfig.chapterHeaderImages) {
-          securityConfig.chapterHeaderImages = {
-            ...(securityConfig.chapterHeaderImages || {}),
-            ...cloudConfig.chapterHeaderImages,
-          };
+        if (cloudConfig.contentAvailability?.books) {
+          securityConfig.contentAvailability = normalizeBooksMap(cloudConfig.contentAvailability.books);
         }
       }
+
+      // Imagens vindas dos documentos dedicados chapter_img__* e do system_config são fonte da verdade
+      securityConfig.chapterHeaderImages = {
+        ...cloudImages,
+      };
+
+      lastFirestoreRefreshAt = Date.now();
       saveSecurityConfig(securityConfig);
-      console.log(`[Firebase] Sincronização concluída com sucesso! (${securityConfig.readerAccesses.length} acessos prontos).`);
+    } catch (err: any) {
+      console.warn('[Firebase] Aviso ao atualizar estado a partir do Firestore:', err?.message || err);
+    } finally {
+      firestoreRefreshInFlight = null;
+    }
+  })();
+
+  return firestoreRefreshInFlight;
+}
+
+async function syncWithFirestore(): Promise<void> {
+  try {
+    if (!firebaseServerStore.isReady()) {
+      firebaseServerStore.init();
+    }
+    if (!firebaseServerStore.isReady()) {
+      console.log('[Firebase] Operando em modo contingência local.');
+      return;
+    }
+
+    const [cloudReaders, cloudConfig, cloudImages] = await Promise.all([
+      firebaseServerStore.loadAllReaderAccesses(),
+      firebaseServerStore.loadSystemConfig(),
+      firebaseServerStore.loadAllChapterImages(),
+    ]);
+
+    if (cloudReaders.length > 0 || cloudConfig) {
+      console.log(`[Firebase] Sincronizando ${cloudReaders.length} leitores e configurações do Cloud Firestore...`);
+
+      if (cloudReaders.length > 0) {
+        const map = new Map<string, ReaderAccessRecord>();
+        for (const r of cloudReaders) {
+          if (r.pinHash && r.pinSalt) {
+            map.set(r.id, r as ReaderAccessRecord);
+          }
+        }
+        // Preserva eventuais leitores locais novos que não estejam no Firestore e os salva
+        for (const local of securityConfig.readerAccesses || []) {
+          if (!map.has(local.id)) {
+            map.set(local.id, local);
+            await firebaseServerStore.saveReaderAccess(local).catch(() => {});
+          }
+        }
+        securityConfig.readerAccesses = Array.from(map.values()).sort(
+          (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+        );
+      }
+
+      if (cloudConfig) {
+        securityConfig.isLibraryLocked = Boolean(cloudConfig.isLibraryLocked);
+        securityConfig.lockReason = cloudConfig.lockReason || '';
+        if (typeof cloudConfig.sessionsRevokedBefore === 'number') {
+          securityConfig.sessionsRevokedBefore = Math.max(
+            securityConfig.sessionsRevokedBefore || 0,
+            cloudConfig.sessionsRevokedBefore
+          );
+        }
+        securityConfig.features = {
+          ...DEFAULT_FEATURES,
+          ...(cloudConfig.features || {}),
+          audioReading: false,
+        };
+        if (cloudConfig.adminUsername) {
+          securityConfig.adminUsername = cloudConfig.adminUsername;
+        }
+        if (cloudConfig.adminPasswordHash && cloudConfig.adminPasswordSalt) {
+          securityConfig.adminPasswordHash = cloudConfig.adminPasswordHash;
+          securityConfig.adminPasswordSalt = cloudConfig.adminPasswordSalt;
+        }
+        if (cloudConfig.contentAvailability?.books) {
+          securityConfig.contentAvailability = normalizeBooksMap(cloudConfig.contentAvailability.books);
+        }
+      }
+
+      // Aplica imagens da nuvem sem sobrescrever antes de ler!
+      securityConfig.chapterHeaderImages = {
+        ...(securityConfig.chapterHeaderImages || {}),
+        ...cloudImages,
+      };
+
+      // Se havia imagens locais no JSON que ainda não estavam no Firestore, sincroniza para a nuvem
+      for (const [k, imgVal] of Object.entries(securityConfig.chapterHeaderImages || {})) {
+        if (!cloudImages[k] && imgVal) {
+          const [bId, cId] = k.split(':');
+          if (bId && cId) {
+            await firebaseServerStore.saveChapterImage(bId, cId, imgVal).catch(() => {});
+          }
+        }
+      }
+
+      if (!cloudConfig) {
+        await syncSystemConfigToFirestore();
+      }
+
+      lastFirestoreRefreshAt = Date.now();
+      saveSecurityConfig(securityConfig);
+      console.log(`[Firebase] Sincronização concluída com sucesso! (${securityConfig.readerAccesses.length} acessos prontos, ${Object.keys(securityConfig.chapterHeaderImages).length} imagens).`);
     } else {
       // Caso o Firestore esteja vazio, realiza a migração inicial automática
       console.log('[Firebase] Firestore vazio detectado. Executando migração inicial automática...');
@@ -420,8 +536,12 @@ async function syncWithFirestore(): Promise<void> {
           contentAvailability: securityConfig.contentAvailability,
           chapterHeaderImages: securityConfig.chapterHeaderImages || {},
           updatedAt: new Date().toISOString(),
+          adminUsername: securityConfig.adminUsername,
+          adminPasswordHash: securityConfig.adminPasswordHash,
+          adminPasswordSalt: securityConfig.adminPasswordSalt,
         }
       );
+      lastFirestoreRefreshAt = Date.now();
       console.log(`[Firebase] ${result.message}`);
     }
   } catch (err: any) {
@@ -446,6 +566,7 @@ async function syncSystemConfigToFirestore(): Promise<void> {
       adminPasswordHash: securityConfig.adminPasswordHash,
       adminPasswordSalt: securityConfig.adminPasswordSalt,
     });
+    invalidateFirestoreCache();
   } catch (err: any) {
     console.warn('[Firebase] Falha ao persistir system_config no Firestore:', err.message || err);
   }
@@ -474,9 +595,91 @@ interface AdminSessionRecord {
 
 const activeReaderSessions = new Map<string, SessionRecord>();
 const activeAdminSessions = new Map<string, AdminSessionRecord>();
+const loggedOutTokens = new Set<string>();
 
 const READER_SESSION_LIFETIME_MS = 7 * 24 * 60 * 60 * 1000; // 7 dias
 const ADMIN_SESSION_LIFETIME_MS = 4 * 60 * 60 * 1000; // 4 horas
+
+function signSessionToken(payload: Record<string, any>): string {
+  const encoded = Buffer.from(JSON.stringify(payload), 'utf-8').toString('base64url');
+  const sig = crypto.createHmac('sha256', SESSION_SECRET).update(encoded).digest('base64url');
+  return `${encoded}.${sig}`;
+}
+
+function verifySignedToken<T = any>(token: string, expectedRole: 'admin' | 'reader'): T | null {
+  if (!token || loggedOutTokens.has(token)) return null;
+  const parts = token.split('.');
+  if (parts.length !== 2) return null;
+  const [encoded, sig] = parts;
+  if (!encoded || !sig) return null;
+  try {
+    const expectedSig = crypto.createHmac('sha256', SESSION_SECRET).update(encoded).digest('base64url');
+    const bufA = Buffer.from(sig);
+    const bufB = Buffer.from(expectedSig);
+    if (bufA.length !== bufB.length || !crypto.timingSafeEqual(bufA, bufB)) {
+      return null;
+    }
+    const decoded = JSON.parse(Buffer.from(encoded, 'base64url').toString('utf-8'));
+    if (!decoded || decoded.role !== expectedRole || typeof decoded.expiresAt !== 'number') {
+      return null;
+    }
+    if (Date.now() > decoded.expiresAt) {
+      return null;
+    }
+    return decoded as T;
+  } catch {
+    return null;
+  }
+}
+
+function getValidAdminSession(token: string | null): AdminSessionRecord | null {
+  if (!token || loggedOutTokens.has(token)) return null;
+  const mem = activeAdminSessions.get(token);
+  if (mem) {
+    if (Date.now() > mem.expiresAt) {
+      activeAdminSessions.delete(token);
+      return null;
+    }
+    return mem;
+  }
+  const signed = verifySignedToken<{ role: 'admin'; username: string; createdAt: number; expiresAt: number }>(token, 'admin');
+  if (!signed) return null;
+  const restored: AdminSessionRecord = {
+    token,
+    username: signed.username,
+    createdAt: signed.createdAt,
+    expiresAt: signed.expiresAt,
+    ip: 'restored',
+  };
+  activeAdminSessions.set(token, restored);
+  return restored;
+}
+
+function getValidReaderSession(token: string | null): SessionRecord | null {
+  if (!token || loggedOutTokens.has(token)) return null;
+  const mem = activeReaderSessions.get(token);
+  if (mem) {
+    if (Date.now() > mem.expiresAt || mem.createdAt < securityConfig.sessionsRevokedBefore) {
+      activeReaderSessions.delete(token);
+      return null;
+    }
+    return mem;
+  }
+  const signed = verifySignedToken<{ role: 'reader'; accessId?: string; readerName?: string; createdAt: number; expiresAt: number }>(token, 'reader');
+  if (!signed || signed.createdAt < securityConfig.sessionsRevokedBefore) {
+    return null;
+  }
+  const restored: SessionRecord = {
+    token,
+    accessId: signed.accessId,
+    readerName: signed.readerName,
+    createdAt: signed.createdAt,
+    expiresAt: signed.expiresAt,
+    ip: 'restored',
+  };
+  activeReaderSessions.set(token, restored);
+  return restored;
+}
 
 /* ==========================================================================
    RATE LIMITING E PROTEÇÃO CONTRA FORÇA BRUTA
@@ -573,7 +776,7 @@ function extractAdminToken(req: express.Request): string | null {
   const authHeader = req.headers.authorization;
   if (authHeader && authHeader.startsWith('Bearer ')) {
     const candidate = authHeader.substring(7).trim();
-    if (activeAdminSessions.has(candidate)) {
+    if (getValidAdminSession(candidate)) {
       return candidate;
     }
   }
@@ -614,7 +817,7 @@ function requireAdminAuth(req: express.Request, res: express.Response, next: exp
     return;
   }
 
-  const session = activeAdminSessions.get(token);
+  const session = getValidAdminSession(token);
   if (!session) {
     res.status(401).json({
       success: false,
@@ -623,19 +826,18 @@ function requireAdminAuth(req: express.Request, res: express.Response, next: exp
     return;
   }
 
-  if (Date.now() > session.expiresAt) {
-    activeAdminSessions.delete(token);
-    res.status(401).json({
-      success: false,
-      error: 'Sessão administrativa expirada. Efetue novo login.',
-    });
-    return;
-  }
-
   next();
 }
 
-app.use(express.json());
+app.use(express.json({ limit: '10mb' }));
+
+// Desabilita qualquer cache HTTP para todas as rotas /api/* (evita respostas obsoletas em PWAs e proxies)
+app.use('/api', (_req, res, next) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
+  next();
+});
 
 /* ==========================================================================
    ROTAS DE AUTENTICAÇÃO E LEITURA (/api/auth)
@@ -650,12 +852,14 @@ app.get('/api/health', (_req, res) => {
 });
 
 // Consulta de sessão do leitor
-app.get('/api/auth/session', (req, res) => {
+app.get('/api/auth/session', async (req, res) => {
+  await refreshStateFromFirestore();
+
   // 0. Bypass do Administrador: se possuir sessão de administrador ativa, concede acesso total à leitura sem PIN
   const adminToken = extractAdminToken(req);
   if (adminToken) {
-    const adminSession = activeAdminSessions.get(adminToken);
-    if (adminSession && Date.now() <= adminSession.expiresAt) {
+    const adminSession = getValidAdminSession(adminToken);
+    if (adminSession) {
       res.json({
         authenticated: true,
         isAdmin: true,
@@ -674,6 +878,7 @@ app.get('/api/auth/session', (req, res) => {
           updatedAt: new Date().toISOString(),
         },
         features: securityConfig.features,
+        chapterHeaderImages: securityConfig.chapterHeaderImages || {},
         contentAvailability: {
           books: Object.fromEntries(
             Object.keys(securityConfig.contentAvailability.books).map((bId) => [
@@ -701,6 +906,7 @@ app.get('/api/auth/session', (req, res) => {
       message: securityConfig.lockReason || 'O acesso à biblioteca está temporariamente pausado pela administração.',
       features: securityConfig.features,
       contentAvailability: securityConfig.contentAvailability,
+      chapterHeaderImages: securityConfig.chapterHeaderImages || {},
     });
     return;
   }
@@ -711,27 +917,19 @@ app.get('/api/auth/session', (req, res) => {
       authenticated: false,
       features: securityConfig.features,
       contentAvailability: securityConfig.contentAvailability,
+      chapterHeaderImages: securityConfig.chapterHeaderImages || {},
     });
     return;
   }
 
-  const session = activeReaderSessions.get(token);
+  const session = getValidReaderSession(token);
   if (!session) {
-    res.json({
-      authenticated: false,
-      features: securityConfig.features,
-      contentAvailability: securityConfig.contentAvailability,
-    });
-    return;
-  }
-
-  if (Date.now() > session.expiresAt || session.createdAt < securityConfig.sessionsRevokedBefore) {
-    activeReaderSessions.delete(token);
     res.json({
       authenticated: false,
       reason: 'revoked_or_expired',
       features: securityConfig.features,
       contentAvailability: securityConfig.contentAvailability,
+      chapterHeaderImages: securityConfig.chapterHeaderImages || {},
     });
     return;
   }
@@ -813,11 +1011,13 @@ app.get('/api/auth/session', (req, res) => {
     readerProfile: matchedAccess?.profile || null,
     features: securityConfig.features,
     contentAvailability: effectiveContentAvailability,
+    chapterHeaderImages: securityConfig.chapterHeaderImages || {},
   });
 });
 
 // Configurações públicas e de disponibilidade da biblioteca
-app.get('/api/library/config', (_req, res) => {
+app.get('/api/library/config', async (_req, res) => {
+  await refreshStateFromFirestore();
   res.json({
     success: true,
     features: securityConfig.features,
@@ -829,12 +1029,14 @@ app.get('/api/library/config', (_req, res) => {
 });
 
 // Verificação de permissão de acesso a livro/capítulo
-app.get('/api/library/check-access/:bookId/:chapterId', (req, res) => {
+app.get('/api/library/check-access/:bookId/:chapterId', async (req, res) => {
+  await refreshStateFromFirestore();
+
   // 0. Bypass do Administrador: permite acesso irrestrito para leitura e auditoria editorial
   const adminToken = extractAdminToken(req);
   if (adminToken) {
-    const adminSession = activeAdminSessions.get(adminToken);
-    if (adminSession && Date.now() <= adminSession.expiresAt) {
+    const adminSession = getValidAdminSession(adminToken);
+    if (adminSession) {
       res.json({ allowed: true, isAdmin: true });
       return;
     }
@@ -888,7 +1090,7 @@ app.get('/api/library/check-access/:bookId/:chapterId', (req, res) => {
     return;
   }
 
-  const session = activeReaderSessions.get(readerToken);
+  const session = getValidReaderSession(readerToken);
   if (!session) {
     res.status(401).json({
       allowed: false,
@@ -936,6 +1138,8 @@ app.get('/api/library/check-access/:bookId/:chapterId', (req, res) => {
 
 // Validação robusta e padronizada do PIN do leitor com sincronização Firestore
 app.post('/api/auth/verify-pin', async (req, res) => {
+  await refreshStateFromFirestore();
+
   // Se a biblioteca estiver bloqueada pelo painel administrativo
   if (securityConfig.isLibraryLocked) {
     res.status(403).json({
@@ -990,9 +1194,10 @@ app.post('/api/auth/verify-pin', async (req, res) => {
     }
   }
 
-  // 2. Se não conferiu com a memória e o Firestore estiver conectado, busca registros atualizados em tempo real no Firestore
+  // 2. Se não conferiu com a memória e o Firestore estiver conectado, força atualização em tempo real no Firestore
   if (!matchedAccess && firebaseServerStore.isReady()) {
     try {
+      await refreshStateFromFirestore(true);
       const cloudReaders = await firebaseServerStore.loadAllReaderAccesses();
       if (cloudReaders.length > 0) {
         const map = new Map<string, ReaderAccessRecord>();
@@ -1137,8 +1342,14 @@ app.post('/api/auth/verify-pin', async (req, res) => {
     }
   }
 
-  const token = crypto.randomBytes(32).toString('hex');
   const expiresAt = now + READER_SESSION_LIFETIME_MS;
+  const token = signSessionToken({
+    role: 'reader',
+    accessId: matchedAccess.id,
+    readerName: matchedAccess.name,
+    createdAt: now,
+    expiresAt,
+  });
 
   activeReaderSessions.set(token, {
     token,
@@ -1391,14 +1602,15 @@ app.post('/api/auth/register', async (req, res) => {
 
 // 2.1 Cadastro Pessoal do Leitor no Primeiro Acesso (vinculado ao identificador interno do PIN)
 app.post('/api/auth/reader-profile', async (req, res) => {
+  await refreshStateFromFirestore();
   const token = extractReaderToken(req);
   if (!token) {
     res.status(401).json({ success: false, error: 'Sessão não autorizada ou expirada.' });
     return;
   }
 
-  const session = activeReaderSessions.get(token);
-  if (!session || Date.now() > session.expiresAt) {
+  const session = getValidReaderSession(token);
+  if (!session) {
     res.status(401).json({ success: false, error: 'Sessão inválida. Insira o PIN novamente.' });
     return;
   }
@@ -1514,12 +1726,14 @@ app.post('/api/auth/reader-profile', async (req, res) => {
 });
 
 // 2.2 Consulta o perfil pessoal do próprio leitor (isolamento estrito: nunca outros leitores)
-app.get('/api/auth/reader-profile', (req, res) => {
+app.get('/api/auth/reader-profile', async (req, res) => {
+  await refreshStateFromFirestore();
+
   // Bypass do Administrador: retorna perfil administrativo completo com hasProfile=true
   const adminToken = extractAdminToken(req);
   if (adminToken) {
-    const adminSession = activeAdminSessions.get(adminToken);
-    if (adminSession && Date.now() <= adminSession.expiresAt) {
+    const adminSession = getValidAdminSession(adminToken);
+    if (adminSession) {
       res.json({
         success: true,
         hasProfile: true,
@@ -1545,8 +1759,8 @@ app.get('/api/auth/reader-profile', (req, res) => {
     return;
   }
 
-  const session = activeReaderSessions.get(token);
-  if (!session || Date.now() > session.expiresAt) {
+  const session = getValidReaderSession(token);
+  if (!session) {
     res.status(401).json({ success: false, error: 'Sessão inválida.' });
     return;
   }
@@ -1574,6 +1788,7 @@ app.post('/api/auth/logout', (req, res) => {
   const token = extractReaderToken(req);
   if (token) {
     activeReaderSessions.delete(token);
+    loggedOutTokens.add(token);
   }
 
   res.setHeader(
@@ -1596,9 +1811,8 @@ app.get('/api/admin/session', (req, res) => {
     return;
   }
 
-  const session = activeAdminSessions.get(token);
-  if (!session || Date.now() > session.expiresAt) {
-    if (session) activeAdminSessions.delete(token);
+  const session = getValidAdminSession(token);
+  if (!session) {
     res.json({ authenticated: false });
     return;
   }
@@ -1611,7 +1825,9 @@ app.get('/api/admin/session', (req, res) => {
 });
 
 // 2. Login administrativo
-app.post('/api/admin/login', (req, res) => {
+app.post('/api/admin/login', async (req, res) => {
+  await refreshStateFromFirestore();
+
   const ip = getClientIp(req);
   const now = Date.now();
   const entry = adminRateLimitStore.get(ip) || { attempts: 0, lockedUntil: 0, lastAttempt: now };
@@ -1676,8 +1892,13 @@ app.post('/api/admin/login', (req, res) => {
   // Sucesso
   adminRateLimitStore.delete(ip);
 
-  const token = crypto.randomBytes(32).toString('hex');
   const expiresAt = now + ADMIN_SESSION_LIFETIME_MS;
+  const token = signSessionToken({
+    role: 'admin',
+    username: targetUser,
+    createdAt: now,
+    expiresAt,
+  });
 
   activeAdminSessions.set(token, {
     token,
@@ -1713,6 +1934,7 @@ app.post('/api/admin/logout', (req, res) => {
   const token = extractAdminToken(req);
   if (token) {
     activeAdminSessions.delete(token);
+    loggedOutTokens.add(token);
   }
 
   res.setHeader(
@@ -1724,7 +1946,8 @@ app.post('/api/admin/logout', (req, res) => {
 });
 
 // 4. Status administrativo do sistema (requer autenticação)
-app.get('/api/admin/status', requireAdminAuth, (_req, res) => {
+app.get('/api/admin/status', requireAdminAuth, async (_req, res) => {
+  await refreshStateFromFirestore();
   res.json({
     success: true,
     isLibraryLocked: securityConfig.isLibraryLocked,
@@ -1741,7 +1964,7 @@ app.get('/api/admin/status', requireAdminAuth, (_req, res) => {
 });
 
 // 5. Alteração do PIN compartilhado dos leitores (requer autenticação)
-app.post('/api/admin/update-pin', requireAdminAuth, (req, res) => {
+app.post('/api/admin/update-pin', requireAdminAuth, async (req, res) => {
   const { newPin, confirmPin, revokeExistingSessions = true } = req.body || {};
 
   if (!newPin || typeof newPin !== 'string' || newPin.trim().length < 4) {
@@ -1776,7 +1999,7 @@ app.post('/api/admin/update-pin', requireAdminAuth, (req, res) => {
   }
 
   saveSecurityConfig(securityConfig);
-  syncSystemConfigToFirestore();
+  await syncSystemConfigToFirestore();
 
   res.json({
     success: true,
@@ -1787,7 +2010,8 @@ app.post('/api/admin/update-pin', requireAdminAuth, (req, res) => {
 });
 
 // 5.1 Alteração do login (usuário) e senha do administrador (requer autenticação)
-app.post('/api/admin/update-credentials', requireAdminAuth, (req, res) => {
+app.post('/api/admin/update-credentials', requireAdminAuth, async (req, res) => {
+  await refreshStateFromFirestore();
   const { currentPassword, newUsername, newPassword, confirmNewPassword } = req.body || {};
 
   if (!currentPassword || typeof currentPassword !== 'string') {
@@ -1832,7 +2056,7 @@ app.post('/api/admin/update-credentials', requireAdminAuth, (req, res) => {
     // Atualiza a sessão ativa atual associada ao token
     const token = extractAdminToken(req);
     if (token) {
-      const sess = activeAdminSessions.get(token);
+      const sess = getValidAdminSession(token);
       if (sess) {
         sess.username = cleanNewUser;
       }
@@ -1873,7 +2097,7 @@ app.post('/api/admin/update-credentials', requireAdminAuth, (req, res) => {
   }
 
   saveSecurityConfig(securityConfig);
-  syncSystemConfigToFirestore();
+  await syncSystemConfigToFirestore();
 
   res.json({
     success: true,
@@ -1883,14 +2107,14 @@ app.post('/api/admin/update-credentials', requireAdminAuth, (req, res) => {
 });
 
 // 6. Bloqueio / Liberação temporária de novos acessos à biblioteca (requer autenticação)
-app.post('/api/admin/toggle-lock', requireAdminAuth, (req, res) => {
+app.post('/api/admin/toggle-lock', requireAdminAuth, async (req, res) => {
   const { locked, reason } = req.body || {};
 
   securityConfig.isLibraryLocked = Boolean(locked);
   securityConfig.lockReason = typeof reason === 'string' ? reason.trim() : '';
 
   saveSecurityConfig(securityConfig);
-  syncSystemConfigToFirestore();
+  await syncSystemConfigToFirestore();
 
   res.json({
     success: true,
@@ -1903,14 +2127,14 @@ app.post('/api/admin/toggle-lock', requireAdminAuth, (req, res) => {
 });
 
 // 7. Revogação de todas as sessões ativas dos leitores (requer autenticação)
-app.post('/api/admin/revoke-sessions', requireAdminAuth, (_req, res) => {
+app.post('/api/admin/revoke-sessions', requireAdminAuth, async (_req, res) => {
   const count = activeReaderSessions.size;
   activeReaderSessions.clear();
   securityConfig.sessionsRevokedBefore = Date.now();
   securityConfig.lastRevokedAt = new Date().toISOString();
 
   saveSecurityConfig(securityConfig);
-  syncSystemConfigToFirestore();
+  await syncSystemConfigToFirestore();
 
   res.json({
     success: true,
@@ -1921,14 +2145,16 @@ app.post('/api/admin/revoke-sessions', requireAdminAuth, (_req, res) => {
 });
 
 // 8. Consulta e Alteração de Funcionalidades da Biblioteca (requer autenticação)
-app.get('/api/admin/features', requireAdminAuth, (_req, res) => {
+app.get('/api/admin/features', requireAdminAuth, async (_req, res) => {
+  await refreshStateFromFirestore();
   res.json({
     success: true,
     features: securityConfig.features,
   });
 });
 
-app.post('/api/admin/features', requireAdminAuth, (req, res) => {
+app.post('/api/admin/features', requireAdminAuth, async (req, res) => {
+  await refreshStateFromFirestore();
   const { features } = req.body || {};
 
   if (!features || typeof features !== 'object') {
@@ -1958,7 +2184,7 @@ app.post('/api/admin/features', requireAdminAuth, (req, res) => {
   }
 
   saveSecurityConfig(securityConfig);
-  syncSystemConfigToFirestore();
+  await syncSystemConfigToFirestore();
 
   res.json({
     success: true,
@@ -1968,14 +2194,16 @@ app.post('/api/admin/features', requireAdminAuth, (req, res) => {
 });
 
 // 9. Consulta e Alteração de Disponibilidade de Livros e Capítulos (requer autenticação)
-app.get('/api/admin/content-availability', requireAdminAuth, (_req, res) => {
+app.get('/api/admin/content-availability', requireAdminAuth, async (_req, res) => {
+  await refreshStateFromFirestore();
   res.json({
     success: true,
     contentAvailability: securityConfig.contentAvailability,
   });
 });
 
-app.post('/api/admin/content-availability', requireAdminAuth, (req, res) => {
+app.post('/api/admin/content-availability', requireAdminAuth, async (req, res) => {
+  await refreshStateFromFirestore();
   const { contentAvailability } = req.body || {};
 
   if (!contentAvailability || !contentAvailability.books || typeof contentAvailability.books !== 'object') {
@@ -2010,7 +2238,7 @@ app.post('/api/admin/content-availability', requireAdminAuth, (req, res) => {
   }
 
   saveSecurityConfig(securityConfig);
-  syncSystemConfigToFirestore();
+  await syncSystemConfigToFirestore();
 
   res.json({
     success: true,
@@ -2020,37 +2248,55 @@ app.post('/api/admin/content-availability', requireAdminAuth, (req, res) => {
 });
 
 // 9.1 Atualização de imagem/banner de cabeçalho do capítulo (requer autenticação de administrador)
-app.post('/api/admin/chapter-image', requireAdminAuth, (req, res) => {
-  const { bookId, chapterId, headerImage } = req.body || {};
-  if (!bookId || !chapterId) {
-    res.status(400).json({
-      success: false,
-      error: 'bookId e chapterId são obrigatórios.',
+app.post('/api/admin/chapter-image', requireAdminAuth, async (req, res) => {
+  try {
+    await refreshStateFromFirestore();
+    const { bookId, chapterId, headerImage } = req.body || {};
+    if (!bookId || !chapterId) {
+      res.status(400).json({
+        success: false,
+        error: 'bookId e chapterId são obrigatórios.',
+      });
+      return;
+    }
+
+    if (!securityConfig.chapterHeaderImages) {
+      securityConfig.chapterHeaderImages = {};
+    }
+
+    const key = `${bookId}:${chapterId}`;
+    const cleanImage = typeof headerImage === 'string' && headerImage.trim() ? headerImage.trim() : null;
+    if (cleanImage) {
+      securityConfig.chapterHeaderImages[key] = cleanImage;
+    } else {
+      delete securityConfig.chapterHeaderImages[key];
+    }
+
+    saveSecurityConfig(securityConfig);
+
+    if (!firebaseServerStore.isReady()) {
+      firebaseServerStore.init();
+    }
+    if (firebaseServerStore.isReady()) {
+      await firebaseServerStore.saveChapterImage(bookId, chapterId, cleanImage);
+      await syncSystemConfigToFirestore();
+      invalidateFirestoreCache();
+    }
+
+    res.json({
+      success: true,
+      key,
+      headerImage: securityConfig.chapterHeaderImages[key] || null,
+      chapterHeaderImages: securityConfig.chapterHeaderImages,
+      message: 'Imagem do capítulo atualizada e salva com persistência para todos os leitores e dispositivos.',
     });
-    return;
+  } catch (err: any) {
+    console.error('[admin/chapter-image] Erro ao salvar imagem do capítulo:', err);
+    res.status(500).json({
+      success: false,
+      error: err?.message || 'Erro ao salvar imagem do capítulo no servidor/Firestore.',
+    });
   }
-
-  if (!securityConfig.chapterHeaderImages) {
-    securityConfig.chapterHeaderImages = {};
-  }
-
-  const key = `${bookId}:${chapterId}`;
-  if (typeof headerImage === 'string' && headerImage.trim()) {
-    securityConfig.chapterHeaderImages[key] = headerImage.trim();
-  } else {
-    delete securityConfig.chapterHeaderImages[key];
-  }
-
-  saveSecurityConfig(securityConfig);
-  syncSystemConfigToFirestore();
-
-  res.json({
-    success: true,
-    key,
-    headerImage: securityConfig.chapterHeaderImages[key] || null,
-    chapterHeaderImages: securityConfig.chapterHeaderImages,
-    message: 'Imagem do capítulo atualizada e salva com persistência para todos os leitores.',
-  });
 });
 
 /* ==========================================================================
@@ -2078,7 +2324,8 @@ function sanitizeReaderAccess(acc: ReaderAccessRecord) {
 }
 
 // 10.1 Listar todos os acessos cadastrados
-app.get('/api/admin/readers', requireAdminAuth, (_req, res) => {
+app.get('/api/admin/readers', requireAdminAuth, async (_req, res) => {
+  await refreshStateFromFirestore();
   const list = (securityConfig.readerAccesses || []).map(sanitizeReaderAccess);
   res.json({
     success: true,
@@ -2088,6 +2335,7 @@ app.get('/api/admin/readers', requireAdminAuth, (_req, res) => {
 
 // 10.2 Criar novo PIN de leitor (individual, gerado ou manual)
 app.post('/api/admin/readers', requireAdminAuth, async (req, res) => {
+  await refreshStateFromFirestore();
   const { name, pinMode = 'auto', customPin, expiresAt = null, notes, contentPermissions } = req.body || {};
 
   const cleanName = typeof name === 'string' ? name.trim() : '';
@@ -2210,6 +2458,7 @@ app.post('/api/admin/readers', requireAdminAuth, async (req, res) => {
 
 // 10.3 Alterar estado de um acesso (bloquear / reativar / revogar)
 app.patch('/api/admin/readers/:id/status', requireAdminAuth, async (req, res) => {
+  await refreshStateFromFirestore();
   const { id } = req.params;
   const { status: targetStatus } = req.body || {};
 
@@ -2222,7 +2471,11 @@ app.patch('/api/admin/readers/:id/status', requireAdminAuth, async (req, res) =>
     return;
   }
 
-  const target = (securityConfig.readerAccesses || []).find((a) => a.id === id);
+  let target = (securityConfig.readerAccesses || []).find((a) => a.id === id);
+  if (!target) {
+    await refreshStateFromFirestore(true);
+    target = (securityConfig.readerAccesses || []).find((a) => a.id === id);
+  }
   if (!target) {
     res.status(404).json({
       success: false,
@@ -2265,8 +2518,13 @@ app.patch('/api/admin/readers/:id/status', requireAdminAuth, async (req, res) =>
 
 // 10.3.0 Aprovar / Liberar Acesso de leitor com um único clique
 app.post('/api/admin/readers/:id/approve', requireAdminAuth, async (req, res) => {
+  await refreshStateFromFirestore();
   const { id } = req.params;
-  const target = (securityConfig.readerAccesses || []).find((a) => a.id === id);
+  let target = (securityConfig.readerAccesses || []).find((a) => a.id === id);
+  if (!target) {
+    await refreshStateFromFirestore(true);
+    target = (securityConfig.readerAccesses || []).find((a) => a.id === id);
+  }
   if (!target) {
     res.status(404).json({
       success: false,
@@ -2285,6 +2543,7 @@ app.post('/api/admin/readers/:id/approve', requireAdminAuth, async (req, res) =>
   }
 
   saveSecurityConfig(securityConfig);
+  invalidateFirestoreCache();
 
   try {
     await firebaseServerStore.saveReaderAccess(target);
@@ -2302,6 +2561,7 @@ app.post('/api/admin/readers/:id/approve', requireAdminAuth, async (req, res) =>
 
 // 10.3.1 Atualizar dados cadastrais pessoais e observações do leitor diretamente (salvando no Firestore e preservando PIN)
 app.put('/api/admin/readers/:id/profile', requireAdminAuth, async (req, res) => {
+  await refreshStateFromFirestore();
   const { id } = req.params;
   const target = (securityConfig.readerAccesses || []).find((a) => a.id === id);
   if (!target) {
@@ -2454,6 +2714,7 @@ app.put('/api/admin/readers/:id/profile', requireAdminAuth, async (req, res) => 
 
 // 10.4 Excluir acesso de leitor definitivamente
 app.delete('/api/admin/readers/:id', requireAdminAuth, async (req, res) => {
+  await refreshStateFromFirestore();
   const { id } = req.params;
 
   const index = (securityConfig.readerAccesses || []).findIndex((a) => a.id === id);
@@ -2471,10 +2732,12 @@ app.delete('/api/admin/readers/:id', requireAdminAuth, async (req, res) => {
   for (const [token, sess] of activeReaderSessions.entries()) {
     if (sess.accessId === id) {
       activeReaderSessions.delete(token);
+      loggedOutTokens.add(token);
     }
   }
 
   saveSecurityConfig(securityConfig);
+  invalidateFirestoreCache();
 
   // Exclui imediatamente do Cloud Firestore
   try {
@@ -2491,6 +2754,7 @@ app.delete('/api/admin/readers/:id', requireAdminAuth, async (req, res) => {
 
 // 10.5 Redefinir PIN de um leitor existente (substitui hash/salt e preserva dados)
 app.post('/api/admin/readers/:id/reset-pin', requireAdminAuth, async (req, res) => {
+  await refreshStateFromFirestore();
   const { id } = req.params;
   const { pinMode = 'auto', customPin } = req.body || {};
 
@@ -2557,11 +2821,13 @@ app.post('/api/admin/readers/:id/reset-pin', requireAdminAuth, async (req, res) 
   for (const [token, sess] of activeReaderSessions.entries()) {
     if (sess.accessId === id) {
       activeReaderSessions.delete(token);
+      loggedOutTokens.add(token);
     }
   }
 
   // Salva no arquivo local
   saveSecurityConfig(securityConfig);
+  invalidateFirestoreCache();
 
   // Persiste no Cloud Firestore com await garantido
   try {
@@ -2590,6 +2856,7 @@ app.delete('/api/admin/readers', requireAdminAuth, async (_req, res) => {
 
   // Salva no arquivo local
   saveSecurityConfig(securityConfig);
+  invalidateFirestoreCache();
 
   // Remove todos os registros no Cloud Firestore
   let firestoreDeleted = 0;
@@ -2609,6 +2876,7 @@ app.delete('/api/admin/readers', requireAdminAuth, async (_req, res) => {
 
 // 10.7 Alterar permissões de livros e capítulos de um leitor (Liberado / Bloqueado)
 app.put('/api/admin/readers/:id/permissions', requireAdminAuth, async (req, res) => {
+  await refreshStateFromFirestore();
   const { id } = req.params;
   const { contentPermissions } = req.body || {};
 
@@ -2664,9 +2932,23 @@ app.post('/api/admin/firebase/migrate', requireAdminAuth, async (_req, res) => {
       sessionsRevokedBefore: securityConfig.sessionsRevokedBefore,
       features: securityConfig.features,
       contentAvailability: securityConfig.contentAvailability,
+      chapterHeaderImages: securityConfig.chapterHeaderImages || {},
+      adminUsername: securityConfig.adminUsername,
+      adminPasswordHash: securityConfig.adminPasswordHash,
+      adminPasswordSalt: securityConfig.adminPasswordSalt,
       updatedAt: new Date().toISOString(),
     }
   );
+  // Migra também imagens individuais de capítulos para documentos dedicados no Firestore
+  if (firebaseServerStore.isReady() && securityConfig.chapterHeaderImages) {
+    for (const [k, imgVal] of Object.entries(securityConfig.chapterHeaderImages)) {
+      const [bId, cId] = k.split(':');
+      if (bId && cId && imgVal) {
+        await firebaseServerStore.saveChapterImage(bId, cId, imgVal).catch(() => {});
+      }
+    }
+  }
+  invalidateFirestoreCache();
   res.json(result);
 });
 

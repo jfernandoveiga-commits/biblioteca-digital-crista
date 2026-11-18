@@ -412,13 +412,106 @@ class FirebaseServerStore {
     if (!this.isReady()) return;
 
     try {
+      // Preserva chapterHeaderImages leves no documento principal apenas para URLs externas;
+      // Data URLs grandes ficam isoladas em documentos dedicados chapter_img__*
+      const safeHeaderImages: Record<string, string> = {};
+      if (configDoc.chapterHeaderImages) {
+        for (const [k, v] of Object.entries(configDoc.chapterHeaderImages)) {
+          if (typeof v === 'string' && v.trim() && !v.startsWith('data:')) {
+            safeHeaderImages[k] = v.trim();
+          }
+        }
+      }
+
+      const payload: FirestoreSystemConfigDoc = {
+        ...configDoc,
+        chapterHeaderImages: safeHeaderImages,
+      };
+
       if (this.clientDb) {
-        await setDoc(doc(this.clientDb, 'system_config', 'security'), configDoc, { merge: true });
+        await setDoc(doc(this.clientDb, 'system_config', 'security'), payload, { merge: true });
       } else if (this.adminDb) {
-        await this.adminDb.collection('system_config').doc('security').set(configDoc, { merge: true });
+        await this.adminDb.collection('system_config').doc('security').set(payload, { merge: true });
       }
     } catch (err: any) {
       console.warn('[Firebase] Falha ao salvar system_config no Firestore:', err.message);
+      throw err;
+    }
+  }
+
+  /**
+   * Carrega todas as imagens personalizadas de capítulos salvas em documentos dedicados no Firestore
+   */
+  public async loadAllChapterImages(): Promise<Record<string, string>> {
+    if (!this.isReady()) return {};
+
+    const images: Record<string, string> = {};
+    const clearedKeys = new Set<string>();
+    let legacySecurityImages: Record<string, any> | null = null;
+
+    const processDoc = (id: string, data: any) => {
+      if (id.startsWith('chapter_img__') || data?.docType === 'chapter_image') {
+        const key = data?.bookId && data?.chapterId ? `${data.bookId}:${data.chapterId}` : '';
+        if (!key) return;
+        if (typeof data.headerImage === 'string' && data.headerImage.trim()) {
+          images[key] = data.headerImage.trim();
+        } else {
+          clearedKeys.add(key);
+        }
+      } else if (id === 'security' && data?.chapterHeaderImages) {
+        legacySecurityImages = data.chapterHeaderImages;
+      }
+    };
+
+    try {
+      if (this.clientDb) {
+        const snap = await getDocs(collection(this.clientDb, 'system_config'));
+        snap.forEach((d) => processDoc(d.id, d.data()));
+      } else if (this.adminDb) {
+        const snap = await this.adminDb.collection('system_config').get();
+        snap.forEach((d) => processDoc(d.id, d.data()));
+      }
+
+      if (legacySecurityImages) {
+        for (const [k, v] of Object.entries(legacySecurityImages)) {
+          if (typeof v === 'string' && v.trim() && !(k in images) && !clearedKeys.has(k)) {
+            images[k] = v.trim();
+          }
+        }
+      }
+    } catch (err: any) {
+      console.warn('[Firebase] Falha ao carregar imagens de capítulos do Firestore:', err.message);
+    }
+    return images;
+  }
+
+  /**
+   * Salva ou limpa a imagem de cabeçalho de um capítulo em documento dedicado no Firestore
+   * (respeita o limite de 1MB por documento e as regras de escrita em system_config)
+   */
+  public async saveChapterImage(
+    bookId: string,
+    chapterId: string,
+    headerImage: string | null
+  ): Promise<void> {
+    if (!this.isReady()) return;
+
+    const safeBook = String(bookId).replace(/[^a-zA-Z0-9_-]/g, '_');
+    const safeChapter = String(chapterId).replace(/[^a-zA-Z0-9_-]/g, '_');
+    const docId = `chapter_img__${safeBook}__${safeChapter}`;
+    const payload = {
+      isLibraryLocked: false,
+      docType: 'chapter_image',
+      bookId,
+      chapterId,
+      headerImage: typeof headerImage === 'string' ? headerImage.trim() : '',
+      updatedAt: new Date().toISOString(),
+    };
+
+    if (this.clientDb) {
+      await setDoc(doc(this.clientDb, 'system_config', docId), payload);
+    } else if (this.adminDb) {
+      await this.adminDb.collection('system_config').doc(docId).set(payload);
     }
   }
 
